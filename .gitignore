@@ -1,0 +1,9 @@
+/.idea
+/test.py
+/dist
+/ravendb_testdriver.egg-info
+/ravendb_testdriver/target
+*.pyc
+*.log
+*.raven-topology
+*.raven-cluster-topology
