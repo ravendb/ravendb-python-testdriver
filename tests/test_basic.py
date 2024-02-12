@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from driver.raven_test_driver import RavenTestDriver
+from ravendb_test_driver import RavenTestDriver
 
 
 class TestBasic(TestCase):

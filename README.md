@@ -16,7 +16,7 @@ Inherit `RavenTestDriver` to your test class or create an instance within your c
 Unittest example:
 
 ```python
-from driver.raven_test_driver import RavenTestDriver
+from ravendb_test_driver import RavenTestDriver
 from unittest import TestCase
 
 class TestBasic(TestCase):

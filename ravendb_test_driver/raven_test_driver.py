@@ -27,7 +27,7 @@ from ravendb.serverwide.operations.common import DeleteDatabaseOperation
 from ravendb_embedded import EmbeddedServer, ServerOptions
 from ravendb_embedded.raven_server_runner import CommandLineArgumentEscaper
 
-from driver.options import GetDocumentStoreOptions
+from ravendb_test_driver.options import GetDocumentStoreOptions
 
 
 class RavenTestDriver:
