@@ -1,0 +1,74 @@
+name: Prepare release PR
+
+# Step 1 of the release flow.
+# Manually triggered. Bumps the version across setup.py / requirements.txt and
+# opens a PR labelled `release`. Merging that PR fires `publish.yml`.
+#
+# Note: ravendb-test-driver pins `ravendb-embedded==<version>`, so publish
+# ravendb-embedded for this version BEFORE merging this PR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, e.g. 7.2.2 (sets package version and the ravendb / ravendb-embedded pins)."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          sed -i -E "s/version=\"[0-9][^\"]*\"/version=\"${VERSION}\"/" setup.py
+          sed -i -E "s/ravendb-embedded==[0-9][^\"]*/ravendb-embedded==${VERSION}/" setup.py
+          sed -i -E "s/ravendb~=[0-9][^\"]*/ravendb~=${VERSION}/" setup.py
+          sed -i -E "s/^ravendb~=.*/ravendb~=${VERSION}/" requirements.txt
+          sed -i -E "s/^ravendb-embedded==.*/ravendb-embedded==${VERSION}/" requirements.txt
+
+          echo "----- setup.py -----"
+          grep -nE 'version=|ravendb~=|ravendb-embedded==' setup.py || true
+          echo "----- requirements.txt -----"
+          cat requirements.txt
+
+          if git diff --quiet; then
+            echo "::error::No version strings changed. Check the sed patterns against setup.py / requirements.txt."
+            exit 1
+          fi
+
+      - name: Create release PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: ${{ github.event.repository.default_branch }}
+          branch: release/${{ inputs.version }}
+          delete-branch: true
+          commit-message: "Release ${{ inputs.version }}"
+          title: "Release ${{ inputs.version }}"
+          labels: release
+          body: |
+            Automated release for **ravendb-test-driver ${{ inputs.version }}**.
+
+            Bumps `setup.py` (package version, `ravendb` + `ravendb-embedded` pins) and `requirements.txt`.
+
+            > [!WARNING]
+            > Merging this PR **while the `release` label is set** triggers the
+            > **Publish to PyPI** workflow, which builds and uploads the package and
+            > creates the `v${{ inputs.version }}` GitHub release.
+
+            > [!IMPORTANT]
+            > This package pins `ravendb-embedded==${{ inputs.version }}`. Make sure
+            > ravendb-embedded ${{ inputs.version }} is already on PyPI before merging.
+
+            Review the diff, then merge to publish. Remove the `release` label before
+            merging if you do **not** want to publish.
