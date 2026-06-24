@@ -38,3 +38,20 @@ class Person:
     def __init__(self, Id: str = None, name: str = None):
         self.Id = Id
         self.name = name
+
+
+class _SeedingTestDriver(RavenTestDriver):
+    def setup_database(self, document_store) -> None:
+        with document_store.open_session() as session:
+            session.store(Person(name="Seeded"), "people/seed")
+            session.save_changes()
+
+
+class TestSetupDatabaseHook(TestCase):
+    def test_setup_database_hook_seeds_new_store(self):
+        # The driver's setup_database hook should run for each store it hands out.
+        driver = _SeedingTestDriver()
+        with driver.get_document_store() as store:
+            with store.open_session() as session:
+                seeded = session.load("people/seed", Person)
+                self.assertEqual("Seeded", seeded.name)
