@@ -1,0 +1,47 @@
+name: tests
+
+on:
+  push:
+    branches: [v7.2]
+  pull_request:
+    branches: [v7.2]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # Latest Python only (the ravendb client requires 3.10+); covers ubuntu + windows.
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.13" }
+          - { os: windows-latest, python: "3.13" }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # The test driver runs the embedded RavenDB server (a .NET application);
+      # the server binaries ship inside the ravendb-embedded dependency wheel.
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Check formatting (black)
+        run: |
+          pip install black
+          black --check .
+
+      - name: Run tests
+        run: python -m unittest discover -s tests
