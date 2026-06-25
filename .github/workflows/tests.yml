@@ -12,10 +12,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      # Minimal effective spread: Python floor + ceiling on Linux, latest on Windows.
+      # Latest Python only (the ravendb client requires 3.10+); covers ubuntu + windows.
       matrix:
         include:
-          - { os: ubuntu-latest, python: "3.9" }
           - { os: ubuntu-latest, python: "3.13" }
           - { os: windows-latest, python: "3.13" }
 
