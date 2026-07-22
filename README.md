@@ -9,6 +9,27 @@ Install from PyPi:
 `pip install ravendb-test-driver`
 
 
+### Requirements
+
+Python 3.10+ is required.
+
+By default the driver boots an **embedded** RavenDB server, which is a .NET application, so a matching .NET runtime must be installed:
+
+- `ravendb-test-driver` 7.2.x requires **.NET 10**
+- `ravendb-test-driver` 7.1.x requires **.NET 8**
+
+If you would rather not manage .NET, attach the driver to a server you run yourself (Docker, testcontainers, a shared CI service), with no runtime on the machine:
+
+```python
+from ravendb_test_driver import RavenTestDriver
+
+RavenTestDriver.configure_external_server("http://localhost:8080")
+# or set the RAVENDB_TEST_SERVER_URL environment variable
+```
+
+Each test still gets its own database. See [`labs/03-attach-to-server.md`](labs/03-attach-to-server.md) for a runnable Docker / testcontainers guide (and the `ravendb-python-embedded` repo for the embedded and self-contained options).
+
+
 ### Usage
 
 Inherit `RavenTestDriver` to your test class or create an instance within your class.
