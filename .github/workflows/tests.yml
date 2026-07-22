@@ -8,30 +8,28 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  embedded:
+    # Path A: the driver boots the embedded server (a .NET app). The 7.2 server targets
+    # net10.0, so install .NET 10 explicitly (7.1 was net8.0). The attach test skips here
+    # (no RAVENDB_TEST_SERVER_URL).
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      # Latest Python only (the ravendb client requires 3.10+); covers ubuntu + windows.
       matrix:
-        include:
-          - { os: ubuntu-latest, python: "3.13" }
-          - { os: windows-latest, python: "3.13" }
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python }}
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python }}
+          python-version: "3.13"
 
-      # The test driver runs the embedded RavenDB server (a .NET application);
-      # the server binaries ship inside the ravendb-embedded dependency wheel.
-      - name: Set up .NET 8
+      - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0"
+          dotnet-version: "10.0"
 
       - name: Install package
         run: |
@@ -45,3 +43,40 @@ jobs:
 
       - name: Run tests
         run: python -m unittest discover -s tests
+
+  attach:
+    # Path C: attach to a RavenDB server running in Docker, with NO .NET installed. Proves the
+    # driver needs no runtime when it does not boot the embedded server.
+    runs-on: ubuntu-latest
+    services:
+      ravendb:
+        image: ravendb/ravendb:7.2-ubuntu-latest
+        ports:
+          - 8080:8080
+        env:
+          RAVEN_Setup_Mode: None
+          RAVEN_License_Eula_Accepted: "true"
+          RAVEN_Security_UnsecuredAccessAllowed: PublicNetwork
+          RAVEN_ServerUrl: http://0.0.0.0:8080
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Wait for RavenDB
+        run: curl --retry 60 --retry-delay 2 --retry-all-errors -sf http://localhost:8080/build/version
+
+      - name: Attach test (path C, no .NET)
+        env:
+          RAVENDB_TEST_SERVER_URL: http://localhost:8080
+          RAVENDB_TEST_REQUIRE_ATTACH: "1"
+        run: python -m unittest tests.test_attach -v
