@@ -25,7 +25,6 @@ from ravendb.primitives.constants import Documents
 from ravendb.serverwide.database_record import DatabaseRecord
 from ravendb.serverwide.operations.common import DeleteDatabaseOperation
 from ravendb_embedded import EmbeddedServer, ServerOptions
-from ravendb_embedded.raven_server_runner import CommandLineArgumentEscaper
 
 from ravendb_test_driver.options import GetDocumentStoreOptions
 
@@ -36,6 +35,7 @@ class RavenTestDriver:
     _INDEX = 0
     _GLOBAL_SERVER_OPTIONS: Optional[ServerOptions] = None
     _EMPTY_SETTINGS_FILE_NAME: Optional[str] = None
+    _EXTERNAL_SERVER_URL: Optional[str] = None
 
     def __init__(self) -> None:
         self.disposed = False
@@ -65,6 +65,19 @@ class RavenTestDriver:
                 "Please call 'configureServer' method before any 'getDocumentStore' is called."
             )
         RavenTestDriver._GLOBAL_SERVER_OPTIONS = options
+
+    @staticmethod
+    def configure_external_server(url: str) -> None:
+        # Attach to a server you run yourself (Docker, testcontainers, a shared CI service)
+        # instead of booting the embedded one, so no .NET is needed on the machine. The driver
+        # still gives every test its own database. Also settable via the
+        # RAVENDB_TEST_SERVER_URL environment variable. Call before the first get_document_store.
+        if RavenTestDriver._TEST_SERVER_STORE.is_value_created:
+            raise RuntimeError(
+                "Cannot configure the server after it was started. "
+                "Call 'configure_external_server' before any 'get_document_store'."
+            )
+        RavenTestDriver._EXTERNAL_SERVER_URL = url
 
     def get_document_store(
         self,
@@ -232,16 +245,20 @@ class RavenTestDriver:
 
     @classmethod
     def run_server(cls) -> DocumentStore:
+        external_url = cls._EXTERNAL_SERVER_URL or os.environ.get("RAVENDB_TEST_SERVER_URL")
+        if external_url:
+            # Attach to an existing server; do not boot the embedded one (no .NET needed).
+            store = DocumentStore(external_url, None)
+            store.initialize()
+            return store
+
         try:
             options = RavenTestDriver._GLOBAL_SERVER_OPTIONS or RavenTestDriver.default_server_options()
 
             command_line_args = options.command_line_args
 
             command_line_args.insert(0, "-c")
-            command_line_args.insert(
-                1,
-                CommandLineArgumentEscaper.escape_single_arg(RavenTestDriver._get_empty_settings_file()),
-            )
+            command_line_args.insert(1, RavenTestDriver._get_empty_settings_file())
         except Exception as e:
             raise RavenException(f"Unable to start server: {e}")
 
