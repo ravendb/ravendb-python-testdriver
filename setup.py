@@ -12,7 +12,7 @@ setup(
     url="https://github.com/ravendb/ravendb-python-testdriver",
     license="MIT",
     keywords=["ravendb", "nosql", "database", "test", "driver"],
-    python_requires="~=3.9",
+    python_requires=">=3.10",
     license_files="LICENSE",
     install_requires=["ravendb-embedded==7.2.3", "ravendb~=7.2.3"],
 )
