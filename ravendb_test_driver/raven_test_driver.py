@@ -68,10 +68,10 @@ class RavenTestDriver:
 
     @staticmethod
     def configure_external_server(url: str) -> None:
-        # Attach to a server you run yourself (Docker, testcontainers, a shared CI service)
-        # instead of booting the embedded one, so no .NET is needed on the machine. The driver
-        # still gives every test its own database. Also settable via the
-        # RAVENDB_TEST_SERVER_URL environment variable. Call before the first get_document_store.
+        """Attach to a server you run yourself (no embedded boot, no .NET); still one database per test.
+
+        Equivalent to setting RAVENDB_TEST_SERVER_URL. Call before the first get_document_store.
+        """
         if RavenTestDriver._TEST_SERVER_STORE.is_value_created:
             raise RuntimeError(
                 "Cannot configure the server after it was started. "

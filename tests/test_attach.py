@@ -1,14 +1,13 @@
+"""Attach path (no embedded boot, no .NET): point RAVENDB_TEST_SERVER_URL at a running server.
+
+Skips when unset, unless RAVENDB_TEST_REQUIRE_ATTACH=1 (CI) makes a missing URL fail loudly.
+"""
+
 import os
-import unittest
 from unittest import TestCase
 
 from ravendb_test_driver import RavenTestDriver
 
-# Path C: attach to a server you run yourself (Docker, testcontainers, shared CI) instead of
-# booting the embedded one, so no .NET is needed. Point RAVENDB_TEST_SERVER_URL at a running
-# server to run this. It must run in its own process (the driver's server is a process-wide
-# singleton), which is exactly how CI invokes it. CI also sets RAVENDB_TEST_REQUIRE_ATTACH=1 so
-# a missing URL fails loudly there instead of skipping silently.
 SERVER_URL = os.environ.get("RAVENDB_TEST_SERVER_URL")
 _REQUIRE = os.environ.get("RAVENDB_TEST_REQUIRE_ATTACH") == "1"
 
