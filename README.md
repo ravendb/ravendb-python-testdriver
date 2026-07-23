@@ -46,7 +46,7 @@ RavenTestDriver.configure_external_server("http://localhost:8080")
 ```
 
 Call it once, before the first `get_document_store()`. A runnable Docker / testcontainers guide
-is in [`labs/03-attach-to-server.md`](labs/03-attach-to-server.md). For the embedded and
+is in [`labs/01-attach-to-server.md`](labs/01-attach-to-server.md). For the embedded and
 self-contained server options, see the
 [`ravendb-python-embedded`](https://github.com/ravendb/ravendb-python-embedded) repository.
 

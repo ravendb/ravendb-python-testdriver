@@ -1,4 +1,4 @@
-"""Lab 03: Attach to a server you run yourself (Docker / testcontainers / shared CI).
+"""Lab 01: Attach to a server you run yourself (Docker / testcontainers / shared CI).
 
 For: containerized CI, or any setup where you do NOT want the driver to boot the embedded
 server (so you need no .NET). You run RavenDB yourself and point the driver at its URL; the
@@ -11,7 +11,7 @@ Start a server, for example with Docker:
     ravendb/ravendb:7.2-ubuntu-latest
 
 Then run:
-  RAVENDB_TEST_SERVER_URL=http://localhost:8080 python labs/03_attach_to_server.py
+  RAVENDB_TEST_SERVER_URL=http://localhost:8080 python labs/01_attach_to_server.py
 """
 
 import os
@@ -37,7 +37,7 @@ def main() -> None:
             with store.open_session() as session:
                 assert session.load("people/1", dict)["name"] == "Ayende"
 
-    print("Lab 03 OK: attached to an external server, no embedded boot and no .NET.")
+    print("Lab 01 OK: attached to an external server, no embedded boot and no .NET.")
 
 
 if __name__ == "__main__":

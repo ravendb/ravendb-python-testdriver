@@ -1,4 +1,4 @@
-# Lab 03: Attach to a server you run yourself
+# Lab 01: Attach to a server you run yourself
 
 **For:** containerized CI, or anyone who does not want the driver to boot the embedded server
 (and therefore wants no .NET on the machine). You run RavenDB yourself (Docker, testcontainers,
@@ -27,7 +27,7 @@ with RavenTestDriver() as driver:
         ...
 ```
 
-The complete runnable example is [`03_attach_to_server.py`](03_attach_to_server.py).
+The complete runnable example is [`01_attach_to_server.py`](01_attach_to_server.py).
 
 ## Run a server with Docker
 
@@ -37,7 +37,7 @@ docker run -d -p 8080:8080 \
   -e RAVEN_Security_UnsecuredAccessAllowed=PublicNetwork -e RAVEN_ServerUrl=http://0.0.0.0:8080 \
   ravendb/ravendb:7.2-ubuntu-latest
 
-RAVENDB_TEST_SERVER_URL=http://localhost:8080 python labs/03_attach_to_server.py
+RAVENDB_TEST_SERVER_URL=http://localhost:8080 python labs/01_attach_to_server.py
 ```
 
 ## Run a server with testcontainers-python
@@ -72,6 +72,6 @@ attach test with `RAVENDB_TEST_SERVER_URL` set and no .NET installed.
 
 ## Takeaway
 
-No embedded server and no .NET, at the cost of running RavenDB yourself. For the embedded
-options (with or without .NET), see the labs in the `ravendb-python-embedded` repository
-(Lab 01 and Lab 02).
+No embedded server and no .NET, at the cost of running RavenDB yourself. If you would rather
+have the driver run the server for you (with or without .NET), see the embedded options in the
+`ravendb-python-embedded` repository.

@@ -1,14 +1,12 @@
-# ravendb-test-driver: server labs
+# ravendb-test-driver: labs
 
-Ways to provide a RavenDB server for your tests, from most convenient to most portable.
+Runnable, self-checking guides for using the test driver. Each lab ships a script next to it, so
+you can run the exact code the guide shows.
 
-| Lab | Path | For whom | Needs system .NET? |
-|-----|------|----------|--------------------|
-| [03](03-attach-to-server.md) | Attach to a server you run yourself (Docker, testcontainers, shared CI) | Containerized CI pipelines | No |
+| Lab | Covers | Needs system .NET? |
+|-----|--------|--------------------|
+| [01](01-attach-to-server.md) | Attach to a server you run yourself (Docker, testcontainers, shared CI) | No |
 
-The embedded options live in the `ravendb-python-embedded` repository:
-
-- Lab 01 - embedded, zero-config (needs a system .NET)
-- Lab 02 - external self-contained server (no .NET)
-
-Every lab ships a runnable script next to it, so you can run the exact code the guide shows.
+Looking for how to run RavenDB itself (embedded, or self-contained without .NET)? That belongs to
+the [`ravendb-python-embedded`](https://github.com/ravendb/ravendb-python-embedded) package and
+has its own labs there.
