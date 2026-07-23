@@ -140,15 +140,15 @@ class RavenTestDriver:
         while time.monotonic() - start_time < timeout.total_seconds():
             database_statistics = admin.send(GetStatisticsOperation())
 
-            indexes = [
+            stale = [
                 x
                 for x in database_statistics.indexes
                 if x.state != IndexState.DISABLED
-                and not x.stale
+                and x.stale
                 and not x.name.startswith(Documents.Indexing.SIDE_BY_SIDE_INDEX_NAME_PREFIX)
             ]
 
-            if all(indexes):
+            if not stale:
                 return
 
             if any(index.state == IndexState.ERROR for index in database_statistics.indexes):
