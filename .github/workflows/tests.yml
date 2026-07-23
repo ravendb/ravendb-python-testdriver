@@ -44,6 +44,12 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests
 
+      - name: Run Lab 02 (embedded per-test)
+        run: python labs/02_embedded_per_test.py
+
+      - name: Run Lab 03 (seeding + indexes)
+        run: python labs/03_seeding_indexes.py
+
   attach:
     # Path C: attach to a RavenDB server running in Docker, with NO .NET installed. Proves the
     # driver needs no runtime when it does not boot the embedded server.
@@ -80,3 +86,8 @@ jobs:
           RAVENDB_TEST_SERVER_URL: http://localhost:8080
           RAVENDB_TEST_REQUIRE_ATTACH: "1"
         run: python -m unittest tests.test_attach -v
+
+      - name: Run Lab 01 (attach, no .NET)
+        env:
+          RAVENDB_TEST_SERVER_URL: http://localhost:8080
+        run: python labs/01_attach_to_server.py

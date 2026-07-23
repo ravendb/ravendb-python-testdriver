@@ -71,6 +71,8 @@ class TestBasic(TestCase):
                 session.save_changes()
 ```
 
+Runnable example: [`labs/02-embedded-per-test.md`](labs/02-embedded-per-test.md).
+
 ### Seeding data and waiting for indexes
 
 - Override `setup_database(self, store)` to seed or configure every database the driver hands
@@ -80,6 +82,8 @@ class TestBasic(TestCase):
   `wait_for_indexing(store)` yourself.
 - `wait_for_user_to_continue_the_test(store)` opens RavenDB Studio so you can inspect the data
   mid-test.
+
+Runnable example: [`labs/03-seeding-indexes.md`](labs/03-seeding-indexes.md).
 
 ## Links
 
