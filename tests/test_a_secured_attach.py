@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from ravendb import Lazy
+from ravendb.exceptions.raven_exceptions import RavenException
 from ravendb_embedded import EmbeddedServer, ServerOptions
 
 from ravendb_test_driver import RavenTestDriver
@@ -140,3 +141,16 @@ class TestSecuredAttach(TestCase):
                 for name, value in original_environment.items():
                     if value is not None:
                         os.environ[name] = value
+
+    def test_https_attach_requires_a_client_certificate(self):
+        original_environment = {name: os.environ.get(name) for name in self._ENV_NAMES}
+        self._reset_driver()
+        try:
+            RavenTestDriver.configure_external_server("https://127.0.0.1:1")
+            with self.assertRaisesRegex(RavenException, "needs a client certificate"):
+                RavenTestDriver.run_server()
+        finally:
+            self._reset_driver()
+            for name, value in original_environment.items():
+                if value is not None:
+                    os.environ[name] = value
