@@ -4,6 +4,10 @@
 running a separate server. `ravendb-embedded` downloads and caches a self-contained RavenDB build,
 then the test driver uses it while keeping each test database isolated.
 
+The embedded package detects the host operating system and architecture at runtime. This keeps the
+same test suite portable across supported Windows, Linux, and macOS machines without per-platform
+server paths or a matching system .NET installation.
+
 ## Run it
 
 Run from a checkout of this repository:
@@ -36,5 +40,5 @@ distribution's ICU package.
 
 ## Takeaway
 
-This mode keeps the zero-server-management experience of embedded tests without requiring a
-system .NET runtime.
+This mode keeps the zero-server-management experience of embedded tests while making the same test
+configuration portable across supported platforms without requiring a system .NET runtime.

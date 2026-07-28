@@ -46,6 +46,9 @@ options.with_auto_downloaded_server()
 RavenTestDriver.configure_server(options)
 ```
 
+The embedded package detects the host operating system and architecture, so the same test
+configuration is portable across supported Windows, Linux, and macOS machines.
+
 Call `configure_server()` before the first `get_document_store()`. The first run downloads
 100 MB+; later runs reuse the cache. Self-contained mode needs no system .NET, but normal RavenDB
 OS dependencies still apply; minimal Linux images may need their distribution's ICU package. See
