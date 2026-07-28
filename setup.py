@@ -13,6 +13,6 @@ setup(
     license="MIT",
     keywords=["ravendb", "nosql", "database", "test", "driver"],
     python_requires=">=3.10",
-    license_files="LICENSE",
+    license_files=["LICENSE"],
     install_requires=["ravendb-embedded==7.2.5", "ravendb==7.2.3.post1"],
 )
