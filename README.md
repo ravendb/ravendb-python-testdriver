@@ -15,8 +15,8 @@ Python 3.10+ is required.
 
 ## Providing a server: pick one
 
-The driver needs a RavenDB server to talk to. There are two ways to give it one; choose based on
-whether you want .NET on the test machine.
+The driver needs a RavenDB server to talk to. Choose how it should get one based on your
+environment.
 
 ### 1. Embedded server (default, needs .NET)
 
@@ -32,7 +32,29 @@ installed:
 Check with `dotnet --list-runtimes`. The requirement tracks the embedded server and can change on
 a minor upgrade, so re-check it when you bump versions.
 
-### 2. Attach to a server you run yourself (no .NET)
+### 2. Self-contained embedded server (no system .NET)
+
+Let the driver download and cache a self-contained RavenDB build. It manages the server for you
+without calling `dotnet`:
+
+```python
+from ravendb_embedded import ServerOptions
+from ravendb_test_driver import RavenTestDriver
+
+options = ServerOptions()
+options.with_auto_downloaded_server()
+RavenTestDriver.configure_server(options)
+```
+
+The embedded package detects the host operating system and architecture, so the same test
+configuration is portable across supported Windows, Linux, and macOS machines.
+
+Call `configure_server()` before the first `get_document_store()`. The first run downloads
+100 MB+; later runs reuse the cache. Self-contained mode needs no system .NET, but normal RavenDB
+OS dependencies still apply; minimal Linux images may need their distribution's ICU package. See
+[`labs/04-embedded-no-dotnet.md`](labs/04-embedded-no-dotnet.md).
+
+### 3. Attach to a server you run yourself (no .NET)
 
 If you would rather not put .NET on the test machine (containerized CI, locked-down hosts), run
 RavenDB yourself (Docker, testcontainers, a shared CI service) and point the driver at its URL.
@@ -42,13 +64,23 @@ The driver skips the embedded boot entirely and still creates an isolated databa
 from ravendb_test_driver import RavenTestDriver
 
 RavenTestDriver.configure_external_server("http://localhost:8080")
-# or set RAVENDB_TEST_SERVER_URL in the environment (handy for CI)
+# or set RAVENDB_TEST_SERVER_URL in the environment
 ```
 
-Call it once, before the first `get_document_store()`. A runnable Docker / testcontainers guide
-is in [`labs/01-attach-to-server.md`](labs/01-attach-to-server.md). For the embedded and
-self-contained server options, see the
-[`ravendb-python-embedded`](https://github.com/ravendb/ravendb-python-embedded) repository.
+For HTTPS with client-certificate authentication:
+
+```python
+RavenTestDriver.configure_external_server(
+    "https://my-ravendb",
+    certificate_pem_path="client.pem",
+    trust_store_path="ca.crt",  # needed when the server CA is not already trusted
+)
+```
+
+The equivalent environment variables are `RAVENDB_TEST_SERVER_URL`,
+`RAVENDB_TEST_SERVER_CERT`, and `RAVENDB_TEST_SERVER_CA`. Call the configuration method once,
+before the first `get_document_store()`. A runnable Docker / testcontainers guide is in
+[`labs/01-attach-to-server.md`](labs/01-attach-to-server.md).
 
 ## Usage
 
@@ -86,6 +118,8 @@ Runnable example: [`labs/02-embedded-per-test.md`](labs/02-embedded-per-test.md)
 Runnable example: [`labs/03-seeding-indexes.md`](labs/03-seeding-indexes.md).
 
 ## Links
+
+The runnable lab scripts live in this repository and are not installed into `site-packages`.
 
 - PyPI: https://pypi.org/project/ravendb-test-driver/
 - GitHub: https://github.com/ravendb/ravendb-python-testdriver

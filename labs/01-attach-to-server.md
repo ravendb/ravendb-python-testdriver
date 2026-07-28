@@ -20,8 +20,9 @@ RavenTestDriver.configure_external_server("http://localhost:8080")
 ```
 
 For a secured (https) server, pass the client certificate: `configure_external_server(url,
-certificate_pem_path=...)` (or set `RAVENDB_TEST_SERVER_CERT`); attaching to https without one
-fails fast with a clear message.
+certificate_pem_path=..., trust_store_path=...)`. The trust store is needed when the server CA is
+not already trusted. The environment equivalents are `RAVENDB_TEST_SERVER_CERT` and
+`RAVENDB_TEST_SERVER_CA`; attaching to HTTPS without a client certificate fails fast.
 
 Then use the driver exactly as with the embedded server:
 
@@ -36,12 +37,13 @@ The complete runnable example is [`01_attach_to_server.py`](01_attach_to_server.
 ## Run a server with Docker
 
 ```bash
-docker run -d -p 8080:8080 \
+docker run --rm -d --name ravendb-test-driver-lab -p 8080:8080 \
   -e RAVEN_Setup_Mode=None -e RAVEN_License_Eula_Accepted=true \
   -e RAVEN_Security_UnsecuredAccessAllowed=PublicNetwork -e RAVEN_ServerUrl=http://0.0.0.0:8080 \
   ravendb/ravendb:7.2-ubuntu-latest
 
 RAVENDB_TEST_SERVER_URL=http://localhost:8080 python labs/01_attach_to_server.py
+docker stop ravendb-test-driver-lab
 ```
 
 ## Run a server with testcontainers-python
@@ -68,11 +70,7 @@ from ravendb_test_driver import RavenTestDriver
 RavenTestDriver.configure_external_server(url)
 ```
 
-## In CI
-
-This repo's own CI uses a GitHub Actions service container (see `.github/workflows/tests.yml`,
-the `attach` job): it runs `ravendb/ravendb:7.2-ubuntu-latest`, waits for it, then runs the
-attach test with `RAVENDB_TEST_SERVER_URL` set and no .NET installed.
+Stop the container in your fixture or test cleanup.
 
 ## Cleanup on a shared server
 
@@ -84,5 +82,4 @@ and prune leftover `test_*` databases between runs.
 ## Takeaway
 
 No embedded server and no .NET, at the cost of running RavenDB yourself. If you would rather
-have the driver run the server for you (with or without .NET), see the embedded options in the
-`ravendb-python-embedded` repository.
+have the driver download and manage a self-contained server, use Lab 04.

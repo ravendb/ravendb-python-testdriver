@@ -35,4 +35,5 @@ to the other. That isolation is what keeps tests independent.
 ## Takeaway
 
 No server to manage in your tests: the driver runs one and gives each test its own database. To
-run without .NET, attach to a server you start yourself (Lab 01).
+run without .NET, attach to a server you start yourself (Lab 01), or let the driver automatically
+download, cache, and manage a self-contained embedded server (Lab 04).

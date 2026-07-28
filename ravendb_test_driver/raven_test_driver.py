@@ -37,6 +37,7 @@ class RavenTestDriver:
     _EMPTY_SETTINGS_FILE_NAME: Optional[str] = None
     _EXTERNAL_SERVER_URL: Optional[str] = None
     _EXTERNAL_SERVER_CERT: Optional[str] = None
+    _EXTERNAL_SERVER_TRUST_STORE: Optional[str] = None
 
     def __init__(self) -> None:
         self.disposed = False
@@ -68,11 +69,16 @@ class RavenTestDriver:
         RavenTestDriver._GLOBAL_SERVER_OPTIONS = options
 
     @staticmethod
-    def configure_external_server(url: str, certificate_pem_path: str = None) -> None:
+    def configure_external_server(
+        url: str,
+        certificate_pem_path: str = None,
+        trust_store_path: str = None,
+    ) -> None:
         """Attach to a server you run yourself (no embedded boot, no .NET); still one database per test.
 
-        For a secured (https) server, pass the client certificate `.pem`. Equivalent to setting
-        RAVENDB_TEST_SERVER_URL (and RAVENDB_TEST_SERVER_CERT). Call before the first get_document_store.
+        For HTTPS, pass the client certificate and, when needed, the CA trust store. The equivalent
+        environment variables are RAVENDB_TEST_SERVER_URL, RAVENDB_TEST_SERVER_CERT, and
+        RAVENDB_TEST_SERVER_CA. Call before the first get_document_store.
         """
         if RavenTestDriver._TEST_SERVER_STORE.is_value_created:
             raise RuntimeError(
@@ -81,6 +87,7 @@ class RavenTestDriver:
             )
         RavenTestDriver._EXTERNAL_SERVER_URL = url
         RavenTestDriver._EXTERNAL_SERVER_CERT = certificate_pem_path
+        RavenTestDriver._EXTERNAL_SERVER_TRUST_STORE = trust_store_path
 
     def get_document_store(
         self,
@@ -97,6 +104,10 @@ class RavenTestDriver:
         document_store.maintenance.server.send(create_database_operation)
 
         store = DocumentStore(document_store.urls, name)
+        if document_store.certificate_pem_path:
+            store.certificate_pem_path = document_store.certificate_pem_path
+        if document_store.trust_store_path:
+            store.trust_store_path = document_store.trust_store_path
 
         self.pre_initialize(store)
         store.initialize()
@@ -252,6 +263,7 @@ class RavenTestDriver:
         if external_url:
             # Attach to an existing server; do not boot the embedded one (no .NET needed).
             certificate = cls._EXTERNAL_SERVER_CERT or os.environ.get("RAVENDB_TEST_SERVER_CERT")
+            trust_store = cls._EXTERNAL_SERVER_TRUST_STORE or os.environ.get("RAVENDB_TEST_SERVER_CA")
             if external_url.lower().startswith("https") and not certificate:
                 raise RavenException(
                     f"Attaching to a secured server ({external_url}) needs a client certificate; pass "
@@ -260,6 +272,8 @@ class RavenTestDriver:
             store = DocumentStore(external_url, None)
             if certificate:
                 store.certificate_pem_path = certificate
+            if trust_store:
+                store.trust_store_path = trust_store
             store.initialize()
             return store
 
