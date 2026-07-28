@@ -36,6 +36,7 @@ class RavenTestDriver:
     _GLOBAL_SERVER_OPTIONS: Optional[ServerOptions] = None
     _EMPTY_SETTINGS_FILE_NAME: Optional[str] = None
     _EXTERNAL_SERVER_URL: Optional[str] = None
+    _EXTERNAL_SERVER_CERT: Optional[str] = None
 
     def __init__(self) -> None:
         self.disposed = False
@@ -67,10 +68,11 @@ class RavenTestDriver:
         RavenTestDriver._GLOBAL_SERVER_OPTIONS = options
 
     @staticmethod
-    def configure_external_server(url: str) -> None:
+    def configure_external_server(url: str, certificate_pem_path: str = None) -> None:
         """Attach to a server you run yourself (no embedded boot, no .NET); still one database per test.
 
-        Equivalent to setting RAVENDB_TEST_SERVER_URL. Call before the first get_document_store.
+        For a secured (https) server, pass the client certificate `.pem`. Equivalent to setting
+        RAVENDB_TEST_SERVER_URL (and RAVENDB_TEST_SERVER_CERT). Call before the first get_document_store.
         """
         if RavenTestDriver._TEST_SERVER_STORE.is_value_created:
             raise RuntimeError(
@@ -78,6 +80,7 @@ class RavenTestDriver:
                 "Call 'configure_external_server' before any 'get_document_store'."
             )
         RavenTestDriver._EXTERNAL_SERVER_URL = url
+        RavenTestDriver._EXTERNAL_SERVER_CERT = certificate_pem_path
 
     def get_document_store(
         self,
@@ -248,7 +251,15 @@ class RavenTestDriver:
         external_url = cls._EXTERNAL_SERVER_URL or os.environ.get("RAVENDB_TEST_SERVER_URL")
         if external_url:
             # Attach to an existing server; do not boot the embedded one (no .NET needed).
+            certificate = cls._EXTERNAL_SERVER_CERT or os.environ.get("RAVENDB_TEST_SERVER_CERT")
+            if external_url.lower().startswith("https") and not certificate:
+                raise RavenException(
+                    f"Attaching to a secured server ({external_url}) needs a client certificate; pass "
+                    "configure_external_server(url, certificate_pem_path=...) or set RAVENDB_TEST_SERVER_CERT."
+                )
             store = DocumentStore(external_url, None)
+            if certificate:
+                store.certificate_pem_path = certificate
             store.initialize()
             return store
 

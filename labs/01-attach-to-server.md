@@ -19,6 +19,10 @@ RavenTestDriver.configure_external_server("http://localhost:8080")
 #    RAVENDB_TEST_SERVER_URL=http://localhost:8080
 ```
 
+For a secured (https) server, pass the client certificate: `configure_external_server(url,
+certificate_pem_path=...)` (or set `RAVENDB_TEST_SERVER_CERT`); attaching to https without one
+fails fast with a clear message.
+
 Then use the driver exactly as with the embedded server:
 
 ```python
@@ -69,6 +73,13 @@ RavenTestDriver.configure_external_server(url)
 This repo's own CI uses a GitHub Actions service container (see `.github/workflows/tests.yml`,
 the `attach` job): it runs `ravendb/ravendb:7.2-ubuntu-latest`, waits for it, then runs the
 attach test with `RAVENDB_TEST_SERVER_URL` set and no .NET installed.
+
+## Cleanup on a shared server
+
+Each test's database is deleted when its store closes, so dispose the driver (use it as a
+context manager). If a run is hard-killed before that, per-test `test_*` databases can be left
+behind on a shared server and a rerun may collide with them; prefer a fresh or per-run server,
+and prune leftover `test_*` databases between runs.
 
 ## Takeaway
 
