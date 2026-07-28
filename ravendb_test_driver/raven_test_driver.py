@@ -25,7 +25,6 @@ from ravendb.primitives.constants import Documents
 from ravendb.serverwide.database_record import DatabaseRecord
 from ravendb.serverwide.operations.common import DeleteDatabaseOperation
 from ravendb_embedded import EmbeddedServer, ServerOptions
-from ravendb_embedded.raven_server_runner import CommandLineArgumentEscaper
 
 from ravendb_test_driver.options import GetDocumentStoreOptions
 
@@ -36,6 +35,8 @@ class RavenTestDriver:
     _INDEX = 0
     _GLOBAL_SERVER_OPTIONS: Optional[ServerOptions] = None
     _EMPTY_SETTINGS_FILE_NAME: Optional[str] = None
+    _EXTERNAL_SERVER_URL: Optional[str] = None
+    _EXTERNAL_SERVER_CERT: Optional[str] = None
 
     def __init__(self) -> None:
         self.disposed = False
@@ -65,6 +66,21 @@ class RavenTestDriver:
                 "Please call 'configureServer' method before any 'getDocumentStore' is called."
             )
         RavenTestDriver._GLOBAL_SERVER_OPTIONS = options
+
+    @staticmethod
+    def configure_external_server(url: str, certificate_pem_path: str = None) -> None:
+        """Attach to a server you run yourself (no embedded boot, no .NET); still one database per test.
+
+        For a secured (https) server, pass the client certificate `.pem`. Equivalent to setting
+        RAVENDB_TEST_SERVER_URL (and RAVENDB_TEST_SERVER_CERT). Call before the first get_document_store.
+        """
+        if RavenTestDriver._TEST_SERVER_STORE.is_value_created:
+            raise RuntimeError(
+                "Cannot configure the server after it was started. "
+                "Call 'configure_external_server' before any 'get_document_store'."
+            )
+        RavenTestDriver._EXTERNAL_SERVER_URL = url
+        RavenTestDriver._EXTERNAL_SERVER_CERT = certificate_pem_path
 
     def get_document_store(
         self,
@@ -127,15 +143,15 @@ class RavenTestDriver:
         while time.monotonic() - start_time < timeout.total_seconds():
             database_statistics = admin.send(GetStatisticsOperation())
 
-            indexes = [
+            stale = [
                 x
                 for x in database_statistics.indexes
                 if x.state != IndexState.DISABLED
-                and not x.stale
+                and x.stale
                 and not x.name.startswith(Documents.Indexing.SIDE_BY_SIDE_INDEX_NAME_PREFIX)
             ]
 
-            if all(indexes):
+            if not stale:
                 return
 
             if any(index.state == IndexState.ERROR for index in database_statistics.indexes):
@@ -232,16 +248,28 @@ class RavenTestDriver:
 
     @classmethod
     def run_server(cls) -> DocumentStore:
+        external_url = cls._EXTERNAL_SERVER_URL or os.environ.get("RAVENDB_TEST_SERVER_URL")
+        if external_url:
+            # Attach to an existing server; do not boot the embedded one (no .NET needed).
+            certificate = cls._EXTERNAL_SERVER_CERT or os.environ.get("RAVENDB_TEST_SERVER_CERT")
+            if external_url.lower().startswith("https") and not certificate:
+                raise RavenException(
+                    f"Attaching to a secured server ({external_url}) needs a client certificate; pass "
+                    "configure_external_server(url, certificate_pem_path=...) or set RAVENDB_TEST_SERVER_CERT."
+                )
+            store = DocumentStore(external_url, None)
+            if certificate:
+                store.certificate_pem_path = certificate
+            store.initialize()
+            return store
+
         try:
             options = RavenTestDriver._GLOBAL_SERVER_OPTIONS or RavenTestDriver.default_server_options()
 
             command_line_args = options.command_line_args
 
             command_line_args.insert(0, "-c")
-            command_line_args.insert(
-                1,
-                CommandLineArgumentEscaper.escape_single_arg(RavenTestDriver._get_empty_settings_file()),
-            )
+            command_line_args.insert(1, RavenTestDriver._get_empty_settings_file())
         except Exception as e:
             raise RavenException(f"Unable to start server: {e}")
 

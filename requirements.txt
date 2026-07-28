@@ -1,3 +1,0 @@
-ravendb~=7.2.3
-ravendb-embedded==7.2.3
-setuptools~=68.0.0

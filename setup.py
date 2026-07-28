@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 setup(
     name="ravendb-test-driver",
     packages=find_packages(exclude=["*.tests.*", "tests", "*.tests", "tests.*"]),
-    version="7.2.3",
+    version="7.2.5",
     description="RavenDB package for writing integration tests against RavenDB server",
     long_description_content_type="text/markdown",
     long_description=open("README.md").read(),
@@ -12,7 +12,7 @@ setup(
     url="https://github.com/ravendb/ravendb-python-testdriver",
     license="MIT",
     keywords=["ravendb", "nosql", "database", "test", "driver"],
-    python_requires="~=3.9",
+    python_requires=">=3.10",
     license_files="LICENSE",
-    install_requires=["ravendb-embedded==7.2.3", "ravendb~=7.2.3"],
+    install_requires=["ravendb-embedded==7.2.5", "ravendb==7.2.3.post1"],
 )
