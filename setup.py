@@ -14,7 +14,5 @@ setup(
     keywords=["ravendb", "nosql", "database", "test", "driver"],
     python_requires=">=3.10",
     license_files="LICENSE",
-    # ravendb-embedded pinned to the latest PUBLISHED release; Dependabot bumps it to 7.2.5 once
-    # that is on PyPI (embedded and this package release together, embedded first).
-    install_requires=["ravendb-embedded==7.2.3", "ravendb==7.2.3.post1"],
+    install_requires=["ravendb-embedded==7.2.5", "ravendb==7.2.3.post1"],
 )
