@@ -271,6 +271,32 @@ Defaults are chosen so an existing suite keeps working. These are the knobs wort
 Caller-name databases are sanitized to `[A-Za-z0-9_.-]` and truncated, and fall back to `test` when
 the caller has no usable name, such as a lambda or a module-level call.
 
+## Inspecting HTTP traffic
+
+The client sends its requests through `requests`, which honors `HTTP_PROXY`, so any interception
+proxy works without driver support:
+
+```bash
+HTTP_PROXY=http://127.0.0.1:8080 python -m unittest
+```
+
+On Windows, proxy bypass rules skip loopback addresses, so traffic to `127.0.0.1` never reaches the
+proxy. Bind the test server to the machine name instead, which also needs unsecured access to be
+allowed on the private network:
+
+```python
+import socket
+
+from ravendb_test_driver import RavenTestDriver, TestServerOptions
+
+options = TestServerOptions()
+options.server_url = f"http://{socket.gethostname()}:0"
+options.command_line_args.append("--Security.UnsecuredAccessAllowed=PrivateNetwork")
+RavenTestDriver.configure_server(options)
+```
+
+That pair is what `TestServerOptions.UseFiddler()` does in the .NET test driver.
+
 ## Labs
 
 | Lab | Scenario | Needs system .NET? |
