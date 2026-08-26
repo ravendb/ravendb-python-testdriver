@@ -154,6 +154,16 @@ class TestWaitForIndexing(TestCase):
 
         self.assertGreater(admin.polls, 0)
 
+    def test_a_zero_timeout_is_honored_instead_of_becoming_sixty_seconds(self):
+        # `timeout or timedelta(seconds=60)` silently turned an explicit zero into a minute.
+        admin = _FakeAdmin(SimpleNamespace(indexes=[_index("Orders/ByCompany", stale=True)]))
+
+        started = time.monotonic()
+        with self.assertRaises(TimeoutException):
+            RavenTestDriver.wait_for_indexing(_FakeStore(admin), "db", timedelta(0))
+
+        self.assertLess(time.monotonic() - started, 1)
+
     def test_disabled_indexes_are_ignored(self):
         admin = _FakeAdmin(SimpleNamespace(indexes=[_index("Orders/Disabled", stale=True, state=IndexState.DISABLED)]))
 
