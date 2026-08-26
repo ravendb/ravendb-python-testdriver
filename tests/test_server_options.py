@@ -9,6 +9,7 @@ import warnings
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest import TestCase
+from unittest.mock import patch
 
 from ravendb.exceptions.exceptions import TimeoutException
 from ravendb.exceptions.raven_exceptions import RavenException
@@ -264,6 +265,17 @@ class TestDeprecatedHelperAliases(TestCase):
         self.assertEqual(1, len(caught))
         self.assertIs(DeprecationWarning, caught[0].category)
         self.assertIn("_default_server_options", str(caught[0].message))
+
+    def test_run_server_alias_still_works(self):
+        with patch.object(RavenTestDriver, "_run_server", return_value="store") as run_server:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                result = RavenTestDriver.run_server()
+
+        self.assertEqual("store", result)
+        self.assertEqual(1, run_server.call_count)
+        self.assertIs(DeprecationWarning, caught[0].category)
+        self.assertIn("_run_server", str(caught[0].message))
 
     def test_cleanup_temp_dirs_alias_still_works(self):
         directory = tempfile.mkdtemp()

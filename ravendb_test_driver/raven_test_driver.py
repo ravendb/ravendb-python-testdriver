@@ -161,19 +161,9 @@ class RavenTestDriver:
             except KeyError:
                 return
 
-            try:
-                # database_record.database_name, not store.database: a subclass may have renamed
-                # the record in pre_configure_database, and the database it created is the one to
-                # delete.
-                store.maintenance.server.send(DeleteDatabaseOperation(database_record.database_name, True))
-            except (DatabaseDoesNotExistException, NoLoaderException):
-                pass  # ignore
-            except RavenException as e:
-                # The client registers the server's NoLeaderException under a misspelled key
-                # ('NoLoaderException'), so a real no-leader failure arrives as a plain
-                # RavenException. Drop this branch once the client mapping is fixed.
-                if "NoLeaderException" not in str(e):
-                    raise
+            # database_record.database_name, not store.database: a subclass may have renamed the
+            # record in pre_configure_database, and the database it created is the one to delete.
+            self._delete_test_database(store, database_record.database_name)
 
         store.add_after_close(__close_event_callback)
 
@@ -185,6 +175,20 @@ class RavenTestDriver:
         self._document_stores[store] = True
 
         return store
+
+    @staticmethod
+    def _delete_test_database(store: DocumentStore, database_name: str) -> None:
+        """Hard-delete a test database, ignoring the failures that are not the test's problem."""
+        try:
+            store.maintenance.server.send(DeleteDatabaseOperation(database_name, True))
+        except (DatabaseDoesNotExistException, NoLoaderException):
+            pass  # already gone, or the cluster has no leader right now
+        except RavenException as e:
+            # The client registers the server's NoLeaderException under a misspelled key
+            # ('NoLoaderException'), so a real no-leader failure arrives as a plain
+            # RavenException. Drop this branch once the client mapping is fixed.
+            if "NoLeaderException" not in str(e):
+                raise
 
     @classmethod
     def _caller_name(cls, depth: int = 3) -> Optional[str]:
