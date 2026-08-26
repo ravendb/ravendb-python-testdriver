@@ -2,12 +2,14 @@
 
 For: tests that need pre-seeded data and a defined index, and must wait for indexing to settle
 before asserting. Override setup_database() to seed and create the index for every database the
-driver hands out; call wait_for_indexing() before querying so the assertion is not racing the
-indexer. Boots the embedded server (needs .NET).
+driver hands out, pre_configure_database() to change the database itself before it is created,
+and call wait_for_indexing() before querying so the assertion is not racing the indexer. Boots
+the embedded server (needs .NET).
 
 Run:  python labs/03_seeding_indexes.py
 """
 
+from ravendb import GetDatabaseRecordOperation
 from ravendb.documents.indexes.abstract_index_creation_tasks import AbstractIndexCreationTask
 
 from ravendb_test_driver import RavenTestDriver
@@ -26,6 +28,9 @@ class People_ByName(AbstractIndexCreationTask):
 
 
 class SeedingDriver(RavenTestDriver):
+    def pre_configure_database(self, database_record) -> None:  # before the database is created
+        database_record.settings["Indexing.MapTimeoutInSec"] = "30"
+
     def setup_database(self, store) -> None:  # runs for every database the driver creates
         store.execute_index(People_ByName())
         with store.open_session() as session:
@@ -36,12 +41,15 @@ class SeedingDriver(RavenTestDriver):
 def main() -> None:
     with SeedingDriver() as driver:
         with driver.get_document_store() as store:
+            record = store.maintenance.server.send(GetDatabaseRecordOperation(store.database))
+            assert record.settings["Indexing.MapTimeoutInSec"] == "30"  # set before creation
+
             driver.wait_for_indexing(store)  # block until the index is no longer stale
             with store.open_session() as session:
                 hits = list(session.query_index_type(People_ByName, Person).where_equals("name", "Seeded"))
                 assert len(hits) == 1 and hits[0].name == "Seeded", hits
 
-    print("Lab 03 OK: setup_database seeded data + index, wait_for_indexing settled, query returned it.")
+    print("Lab 03 OK: database pre-configured, data + index seeded, wait_for_indexing settled, query returned it.")
 
 
 if __name__ == "__main__":

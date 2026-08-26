@@ -43,7 +43,23 @@ RavenDB indexes are updated asynchronously, so right after you write, an index q
 stale (empty) results. `wait_for_indexing()` blocks until no index is stale, making index-backed
 assertions deterministic instead of flaky.
 
+## Configure the database itself
+
+`setup_database()` runs against a database that already exists. To change the database before it is
+created, override `pre_configure_database()` and edit the `DatabaseRecord`: settings, revisions,
+expiration, encryption and topology are all in reach.
+
+```python
+class SeedingDriver(RavenTestDriver):
+    def pre_configure_database(self, database_record):    # before the database is created
+        database_record.settings["Indexing.MapTimeoutInSec"] = "30"
+```
+
+`wait_for_indexing()` also waits for a side-by-side index deployment to finish, so a test that
+redeploys an index definition queries the new one rather than the index it replaced.
+
 ## Takeaway
 
-`setup_database()` is the single place to seed data and register indexes for every test database;
-`wait_for_indexing()` removes the race between writing and querying an index.
+`pre_configure_database()` shapes the database, `setup_database()` is the single place to seed data
+and register indexes for every test database, and `wait_for_indexing()` removes the race between
+writing and querying an index.

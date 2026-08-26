@@ -24,7 +24,19 @@ def main() -> None:
             with second.open_session() as session:
                 assert session.load("people/1", dict) is None
 
-    print("Lab 02 OK: two stores, two isolated databases, no cross-test leakage.")
+    # You do not have to close every store yourself: closing the driver closes the ones you left
+    # open and deletes their databases.
+    driver = RavenTestDriver()
+    forgotten = driver.get_document_store()
+    assert forgotten.database.startswith("test_"), forgotten.database
+    driver.close()
+    assert driver.disposed
+
+    # The server is shared by every driver in the process, and nothing closes it before the
+    # interpreter exits. Call this from your runner's teardown to keep that cost inside the run.
+    RavenTestDriver.stop_test_server()
+
+    print("Lab 02 OK: two stores, two isolated databases, driver-level cleanup, server stopped.")
 
 
 if __name__ == "__main__":

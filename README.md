@@ -56,6 +56,8 @@ No configuration is needed. The driver starts the framework-dependent server bun
 Run `dotnet --list-runtimes` and look for `Microsoft.NETCore.App`. Re-check the requirement when
 upgrading to a new RavenDB minor version.
 
+Runnable walkthrough: [Lab 02 — isolated embedded databases](labs/02-embedded-per-test.md).
+
 #### Where test data lives
 
 Embedded test servers run in memory, so the create-and-delete-a-database cycle behind every
@@ -107,7 +109,7 @@ RavenTestDriver.configure_server(options)
 The client PEM is required here: a secured server the test client cannot authenticate to is
 rejected before the server starts.
 
-Runnable walkthrough: [Lab 02 — isolated embedded databases](labs/02-embedded-per-test.md).
+Runnable walkthrough: [Lab 05 — secured embedded server](labs/05-secured-embedded.md).
 
 ### On-demand self-contained server
 
@@ -305,6 +307,7 @@ That pair is what `TestServerOptions.UseFiddler()` does in the .NET test driver.
 | [02](labs/02-embedded-per-test.md) | Default embedded server and isolated databases | Yes |
 | [03](labs/03-seeding-indexes.md) | Seed data and wait for real indexing | Yes |
 | [04](labs/04-embedded-no-dotnet.md) | On-demand self-contained server | No |
+| [05](labs/05-secured-embedded.md) | Secured embedded server with client certificates | Yes |
 
 The runnable scripts live in this repository rather than `site-packages`. Clone or download the
 repository, install the package, and run them from the repository root. See the

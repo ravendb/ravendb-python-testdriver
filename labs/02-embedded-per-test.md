@@ -32,6 +32,24 @@ class TestThings(TestCase):
 Two `get_document_store()` calls give two different databases, so data written to one is invisible
 to the other. That isolation is what keeps tests independent.
 
+You do not have to close every store yourself. Closing the driver closes the ones you left open and
+deletes their databases, so a test that throws halfway still cleans up:
+
+```python
+driver = RavenTestDriver()
+store = driver.get_document_store()
+driver.close()          # store closed, database deleted
+```
+
+The embedded server is shared by every driver in the process and runs in memory. Nothing closes it
+before the interpreter exits, so call `RavenTestDriver.stop_test_server()` from your runner's
+teardown when you want that cost inside the run:
+
+```python
+def pytest_sessionfinish(session, exitstatus):
+    RavenTestDriver.stop_test_server()
+```
+
 ## Takeaway
 
 No server to manage in your tests: the driver runs one and gives each test its own database. To
