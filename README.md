@@ -256,6 +256,21 @@ which is also what happens automatically when a debugger is attached, or set
 
 Runnable walkthrough: [Lab 03 — seeding and indexes](labs/03-seeding-indexes.md).
 
+## Opt-in switches
+
+Defaults are chosen so an existing suite keeps working. These are the knobs worth knowing:
+
+| Switch | Default | What it does |
+|--------|---------|--------------|
+| `RavenTestDriver.run_in_memory` | `True` | Runs embedded test servers in memory. Set `False` on a driver subclass to go back to disk |
+| `RavenTestDriver.use_caller_name_for_database` | `False` | Names databases after the calling test (`test_stores_a_person_3`) instead of `test_3` |
+| `RAVENDB_TEST_UNIQUE_DB_NAMES` | off | Adds the process id to database names, so parallel runners sharing one attached server stop colliding |
+| `RAVENDB_TEST_STRICT_LICENSE` | off | Test servers refuse to start without a valid licence, matching the .NET test driver |
+| `RAVENDB_TEST_DRIVER_WAIT_FOR_USER` | on | Set to `0` to skip `wait_for_user_to_continue_the_test` entirely |
+
+Caller-name databases are sanitized to `[A-Za-z0-9_.-]` and truncated, and fall back to `test` when
+the caller has no usable name, such as a lambda or a module-level call.
+
 ## Labs
 
 | Lab | Scenario | Needs system .NET? |
