@@ -1,6 +1,6 @@
 # What's new
 
-## 7.2.6 (unreleased)
+## 7.2.5.post3
 
 Embedded test servers now run in memory and stop writing into the installed package directory.
 Secured embedded servers work end to end, because the driver finally hands its client certificate
@@ -9,7 +9,7 @@ to the stores it creates. Databases can be shaped before they are created throug
 parallel runs. Closing a driver that still holds open stores no longer crashes.
 
 Docs: [RavenDB Python client](https://ravendb.net/docs/article-page/latest/python) ·
-[labs](labs/README.md) · PyPI: https://pypi.org/project/ravendb-test-driver/7.2.6/
+[labs](labs/README.md) · PyPI: https://pypi.org/project/ravendb-test-driver/7.2.5.post3/
 
 ### New features
 
