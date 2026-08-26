@@ -1,5 +1,6 @@
-"""Database-name generation: the caller-name opt-in and the process-wide counter."""
+"""Database-name generation: the caller-name opt-in, per-process uniqueness, and the counter."""
 
+import os
 from unittest import TestCase
 
 from ravendb_test_driver import RavenTestDriver
@@ -50,6 +51,36 @@ class TestCallerNameOptIn(TestCase):
         _name.__code__ = _name.__code__.replace(co_name="x" * 300)
 
         self.assertEqual(100, len(_name()))
+
+
+class TestPerProcessUniqueness(TestCase):
+    def setUp(self):
+        previous = os.environ.get("RAVENDB_TEST_UNIQUE_DB_NAMES")
+        if previous is None:
+            self.addCleanup(os.environ.pop, "RAVENDB_TEST_UNIQUE_DB_NAMES", None)
+        else:
+            self.addCleanup(os.environ.__setitem__, "RAVENDB_TEST_UNIQUE_DB_NAMES", previous)
+
+    def test_is_off_by_default(self):
+        os.environ.pop("RAVENDB_TEST_UNIQUE_DB_NAMES", None)
+
+        name = RavenTestDriver()._next_database_name("stem")
+
+        self.assertNotIn(str(os.getpid()), name)
+
+    def test_adds_the_process_id_when_switched_on(self):
+        os.environ["RAVENDB_TEST_UNIQUE_DB_NAMES"] = "1"
+
+        name = RavenTestDriver()._next_database_name("stem")
+
+        self.assertTrue(name.startswith(f"stem_{os.getpid()}_"), name)
+
+    def test_falsy_values_leave_it_off(self):
+        for value in ("0", "false", "no", "off", ""):
+            with self.subTest(value=value):
+                os.environ["RAVENDB_TEST_UNIQUE_DB_NAMES"] = value
+
+                self.assertNotIn(str(os.getpid()), RavenTestDriver()._next_database_name("stem"))
 
 
 class TestDatabaseNameCounter(TestCase):

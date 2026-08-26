@@ -38,6 +38,7 @@ from ravendb_test_driver.options import GetDocumentStoreOptions, TestServerOptio
 _LOGGER = logging.getLogger(__name__)
 
 _WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_DRIVER_WAIT_FOR_USER"
+_UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
 # co_name values that are never a useful database name.
@@ -204,13 +205,28 @@ class RavenTestDriver:
         sanitized = re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name)[:_DATABASE_NAME_STEM_MAX_LENGTH]
         return sanitized or None
 
+    @staticmethod
+    def _environment_flag(name: str) -> bool:
+        value = os.environ.get(name)
+        if value is None:
+            return False
+        value = value.strip().lower()
+        return bool(value) and value not in _FALSY_ENVIRONMENT_VALUES
+
     @classmethod
     def _next_database_name(cls, database: Optional[str] = None) -> str:
         stem = database
         if stem is None and cls.use_caller_name_for_database:
             stem = cls._caller_name()
 
-        return f"{stem or 'test'}_{cls._next_index()}"
+        parts = [stem or "test"]
+        if cls._environment_flag(_UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE):
+            # The counter alone restarts at 1 in every process, so two runners sharing one
+            # attached server hand out the same name and delete each other's databases.
+            parts.append(str(os.getpid()))
+        parts.append(str(cls._next_index()))
+
+        return "_".join(parts)
 
     def pre_initialize(self, document_store: DocumentStore) -> None:
         pass  # empty by design
