@@ -1,8 +1,12 @@
 import atexit
+import logging
 import os
 import shutil
+import sys
 import tempfile
+import threading
 import time
+import warnings
 import webbrowser
 from datetime import timedelta
 from typing import Optional, Dict, Any, Callable
@@ -16,6 +20,7 @@ from ravendb import (
     GetIndexErrorsOperation,
 )
 from ravendb.documents.indexes.definitions import IndexState
+from ravendb.exceptions.cluster import NoLoaderException
 from ravendb.exceptions.exceptions import (
     DatabaseDoesNotExistException,
     TimeoutException,
@@ -26,13 +31,23 @@ from ravendb.serverwide.database_record import DatabaseRecord
 from ravendb.serverwide.operations.common import DeleteDatabaseOperation
 from ravendb_embedded import EmbeddedServer, ServerOptions
 
-from ravendb_test_driver.options import GetDocumentStoreOptions
+from ravendb_test_driver.errors import DriverCloseError
+from ravendb_test_driver.options import GetDocumentStoreOptions, TestServerOptions
+
+_LOGGER = logging.getLogger(__name__)
+
+_WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_DRIVER_WAIT_FOR_USER"
+_FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
 
 class RavenTestDriver:
+    # Test servers run in memory unless a subclass or a caller's command line says otherwise.
+    run_in_memory: bool = True
+
     _TEST_SERVER: EmbeddedServer = EmbeddedServer()
     _TEST_SERVER_STORE: Lazy[DocumentStore] = Lazy(lambda: RavenTestDriver.run_server())
     _INDEX = 0
+    _INDEX_LOCK = threading.Lock()
     _GLOBAL_SERVER_OPTIONS: Optional[ServerOptions] = None
     _EMPTY_SETTINGS_FILE_NAME: Optional[str] = None
     _EXTERNAL_SERVER_URL: Optional[str] = None
@@ -51,20 +66,37 @@ class RavenTestDriver:
         self.close()
 
     @staticmethod
+    def _next_index() -> int:
+        # Qualified with RavenTestDriver on purpose: 'cls._INDEX += 1' would shadow the class
+        # attribute with a subclass (or instance) one and every driver would restart at 1.
+        with RavenTestDriver._INDEX_LOCK:
+            RavenTestDriver._INDEX += 1
+            return RavenTestDriver._INDEX
+
+    @staticmethod
+    def _remove_empty_settings_file(path: str) -> None:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass  # already gone, or held by something else
+
+    @staticmethod
     def _get_empty_settings_file() -> str:
         if not RavenTestDriver._EMPTY_SETTINGS_FILE_NAME:
             temp_file = tempfile.NamedTemporaryFile(delete=False, prefix="settings-", suffix=".json")
             temp_file.write(b"{}")
             temp_file.close()
             RavenTestDriver._EMPTY_SETTINGS_FILE_NAME = temp_file.name
+            # Registered before the embedded server's own atexit hook, so it runs after it (LIFO).
+            atexit.register(RavenTestDriver._remove_empty_settings_file, temp_file.name)
         return RavenTestDriver._EMPTY_SETTINGS_FILE_NAME
 
     @staticmethod
     def configure_server(options: ServerOptions) -> None:
         if RavenTestDriver._TEST_SERVER_STORE.is_value_created:
             raise RuntimeError(
-                "Cannot configure server after it was started. "
-                "Please call 'configureServer' method before any 'getDocumentStore' is called."
+                "Cannot configure the server after it was started. "
+                "Call 'configure_server' before any 'get_document_store'."
             )
         RavenTestDriver._GLOBAL_SERVER_OPTIONS = options
 
@@ -96,11 +128,13 @@ class RavenTestDriver:
     ) -> DocumentStore:
         database = database or "test"
         options = options or GetDocumentStoreOptions()
-        self._INDEX += 1
-        name = f"{database}_{self._INDEX}"
+        name = f"{database}_{RavenTestDriver._next_index()}"
         document_store = self._TEST_SERVER_STORE.value
 
-        create_database_operation = CreateDatabaseOperation(DatabaseRecord(name))
+        database_record = DatabaseRecord(name)
+        self.pre_configure_database(database_record)
+
+        create_database_operation = CreateDatabaseOperation(database_record)
         document_store.maintenance.server.send(create_database_operation)
 
         store = DocumentStore(document_store.urls, name)
@@ -119,15 +153,24 @@ class RavenTestDriver:
                 return
 
             try:
-                store.maintenance.server.send(DeleteDatabaseOperation(store.database, True))
-            except DatabaseDoesNotExistException:
+                # database_record.database_name, not store.database: a subclass may have renamed
+                # the record in pre_configure_database, and the database it created is the one to
+                # delete.
+                store.maintenance.server.send(DeleteDatabaseOperation(database_record.database_name, True))
+            except (DatabaseDoesNotExistException, NoLoaderException):
                 pass  # ignore
+            except RavenException as e:
+                # The client registers the server's NoLeaderException under a misspelled key
+                # ('NoLoaderException'), so a real no-leader failure arrives as a plain
+                # RavenException. Drop this branch once the client mapping is fixed.
+                if "NoLeaderException" not in str(e):
+                    raise
 
         store.add_after_close(__close_event_callback)
 
         self.setup_database(store)
 
-        if options.wait_for_indexing_timeout:
+        if options.wait_for_indexing_timeout is not None:
             self.wait_for_indexing(store, name, options.wait_for_indexing_timeout)
 
         self._document_stores[store] = True
@@ -135,6 +178,9 @@ class RavenTestDriver:
         return store
 
     def pre_initialize(self, document_store: DocumentStore) -> None:
+        pass  # empty by design
+
+    def pre_configure_database(self, database_record: DatabaseRecord) -> None:
         pass  # empty by design
 
     def setup_database(self, document_store: DocumentStore) -> None:
@@ -146,23 +192,24 @@ class RavenTestDriver:
         database: Optional[str] = None,
         timeout: Optional[timedelta] = None,
     ) -> None:
-        database = database or None
-        timeout = timeout or timedelta(seconds=60)  # Default timeout
+        timeout = timeout if timeout is not None else timedelta(seconds=60)  # Default timeout
         admin = store.maintenance.for_database(database)
         start_time = time.monotonic()
 
         while time.monotonic() - start_time < timeout.total_seconds():
             database_statistics = admin.send(GetStatisticsOperation())
 
-            stale = [
+            # Return only once every applicable index is non-stale AND no side-by-side
+            # replacement is left, so a pending index swap keeps us waiting instead of
+            # handing the caller results from the pre-swap index.
+            pending = [
                 x
                 for x in database_statistics.indexes
                 if x.state != IndexState.DISABLED
-                and x.stale
-                and not x.name.startswith(Documents.Indexing.SIDE_BY_SIDE_INDEX_NAME_PREFIX)
+                and (x.stale or x.name.startswith(Documents.Indexing.SIDE_BY_SIDE_INDEX_NAME_PREFIX))
             ]
 
-            if not stale:
+            if not pending:
                 return
 
             if any(index.state == IndexState.ERROR for index in database_statistics.indexes):
@@ -181,9 +228,51 @@ class RavenTestDriver:
             else ""
         )
 
-        raise TimeoutException(f"The indexes stayed stale for more than {timeout} seconds. {all_index_errors_text}")
+        raise TimeoutException(f"The indexes stayed stale for more than {timeout}. {all_index_errors_text}")
 
-    def wait_for_user_to_continue_the_test(self, store: DocumentStore) -> None:
+    @staticmethod
+    def _is_debugger_attached() -> bool:
+        """Used only to make the wait unbounded, never to skip it.
+
+        sys.gettrace() is deliberately not consulted: coverage.py installs a trace function, so
+        every pytest-cov run would claim a debugger is attached. A false negative here costs the
+        default timeout, not a silently skipped inspection point.
+        """
+        debugpy = sys.modules.get("debugpy")
+        if debugpy is not None:
+            try:
+                if debugpy.is_client_connected():
+                    return True
+            except Exception:  # pragma: no cover - debugpy internals
+                pass
+
+        pydevd = sys.modules.get("pydevd")
+        if pydevd is not None:
+            try:
+                return pydevd.get_global_debugger() is not None
+            except Exception:  # pragma: no cover - pydevd internals
+                pass
+
+        return False
+
+    def wait_for_user_to_continue_the_test(
+        self,
+        store: DocumentStore,
+        timeout: Optional[timedelta] = timedelta(minutes=5),
+    ) -> None:
+        """Open Studio and block until a 'Debug/Done' document shows up in this database.
+
+        Bounded by `timeout` so a call left in committed code fails a CI job fast instead of
+        hanging it; pass timeout=None to wait forever. Set RAVENDB_TEST_DRIVER_WAIT_FOR_USER to
+        0/false/no/off to skip the wait entirely.
+        """
+        environment_value = os.environ.get(_WAIT_FOR_USER_ENVIRONMENT_VARIABLE)
+        if environment_value is not None and environment_value.strip().lower() in _FALSY_ENVIRONMENT_VALUES:
+            return
+
+        if self._is_debugger_attached():
+            timeout = None
+
         database_name_encoded = quote(store.database, safe="")
         documents_page = (
             f"{store.urls[0]}/studio/index.html#databases/documents?&database={database_name_encoded}&withStop=true"
@@ -191,19 +280,36 @@ class RavenTestDriver:
 
         self.open_browser(documents_page)
 
+        start_time = time.monotonic()
         while True:
+            if timeout is not None and time.monotonic() - start_time >= timeout.total_seconds():
+                raise TimeoutException(
+                    f"No 'Debug/Done' document showed up in '{store.database}' within {timeout}. "
+                    "Store a document with that id to continue the test, pass timeout=None to wait "
+                    f"forever, or set {_WAIT_FOR_USER_ENVIRONMENT_VARIABLE}=0 to skip this wait."
+                )
+
             time.sleep(0.5)
             with store.open_session() as session:
-                if session.load("Debug/Done", dict):
+                # Existence check instead of load(): no document is tracked, and the marker is
+                # deleted so a later wait on the same store cannot return on a stale one.
+                if session.advanced.exists("Debug/Done"):
+                    session.delete("Debug/Done")
+                    session.save_changes()
                     break
 
     @staticmethod
     def open_browser(url: str) -> None:
         print(url)
         try:
-            webbrowser.open(url)
+            opened = webbrowser.open(url)
         except Exception as e:
-            raise RuntimeError() from e
+            raise RuntimeError(f"Failed to open a browser at {url}") from e
+
+        if not opened:
+            # Headless machines return False rather than raising. The wait itself still works
+            # through the Debug/Done marker, so this is a note, not a failure.
+            print("No browser could be opened here; use the URL above.")
 
     def close(self) -> None:
         if getattr(self, "disposed", False):
@@ -211,55 +317,113 @@ class RavenTestDriver:
 
         exceptions = []
 
-        for document_store in self._document_stores:
+        try:
+            # Snapshot: each store's after-close callback pops itself out of _document_stores,
+            # and mutating the dict we iterate raises RuntimeError from the for statement itself.
+            for document_store in list(self._document_stores):
+                try:
+                    document_store.close()
+                except Exception as e:
+                    exceptions.append(e)
+        finally:
+            self.disposed = True
+
+        if self.on_driver_closed:
+            # Collected, not raised on the spot: a raising callback used to discard every
+            # store-close error gathered above.
             try:
-                document_store.close()
+                self.on_driver_closed(self)
             except Exception as e:
                 exceptions.append(e)
 
-        self.disposed = True
-
-        if self.on_driver_closed:
-            self.on_driver_closed(self)
-
         if exceptions:
-            raise RuntimeError(", ".join(map(str, exceptions)))
+            raise DriverCloseError(exceptions)
 
     @staticmethod
     def cleanup_temp_dirs(*dirs: str) -> None:
-        try:
-            for i in range(30):
-                any_failure = False
-                for dir_ in dirs:
-                    if os.path.exists(dir_):
-                        if not shutil.rmtree(dir_, ignore_errors=True):
-                            any_failure = True
-                if not any_failure:
-                    return
-                time.sleep(0.2)
-        except Exception:
-            pass
+        for _ in range(30):
+            any_failure = False
+            for dir_ in dirs:
+                if not os.path.exists(dir_):
+                    continue
+                # rmtree returns None, so its return value says nothing about success;
+                # the directory still being there is the only real signal.
+                shutil.rmtree(dir_, ignore_errors=True)
+                if os.path.exists(dir_):
+                    any_failure = True
+            if not any_failure:
+                return
+            time.sleep(0.2)
 
     @staticmethod
     def default_server_options() -> ServerOptions:
-        options = ServerOptions()
+        return RavenTestDriver._normalize_test_server_options(TestServerOptions())
 
-        data_dir = tempfile.mkdtemp()
-        logs_dir = tempfile.mkdtemp()
+    @classmethod
+    def _normalize_test_server_options(cls, options: ServerOptions) -> ServerOptions:
+        """Give any ServerOptions the defaults a test server needs.
 
-        options.data_directory = data_dir
-        options.logs_path = logs_dir
+        This is what C# gets from typing ConfigureServer(TestServerOptions), without breaking
+        callers who pass a plain ServerOptions. Idempotent, and it never overrides a value the
+        caller set explicitly.
+        """
+        security = getattr(options, "security", None)
+        if security is not None and not security.client_pem_certificate_path:
+            raise RavenException(
+                "A secured test server needs a client certificate the test client can "
+                "authenticate with. Pass client_pem_certificate_path to ServerOptions.secured()."
+            )
 
-        def cleanup_temp_dirs() -> None:
-            RavenTestDriver.cleanup_temp_dirs(data_dir, logs_dir)
+        # A local copy: the caller's list is theirs, and from here on there is more than one writer.
+        command_line_args = list(options.command_line_args)
 
-        atexit.register(cleanup_temp_dirs)
+        settings_file = cls._get_empty_settings_file()
+        if settings_file not in command_line_args:
+            command_line_args[:0] = ["-c", settings_file]
+
+        if cls.run_in_memory and not any(arg.startswith("--RunInMemory") for arg in command_line_args):
+            command_line_args.append("--RunInMemory=true")
+
+        options.command_line_args = command_line_args
+
+        # Untouched embedded default: the data directory sits inside the installed package, so a
+        # test run would write into its own dependency tree. Logs follow the data directory.
+        default_data_directory = getattr(ServerOptions, "_DEFAULT_DATA_DIRECTORY", None)
+        if default_data_directory is not None and options.data_directory == default_data_directory:
+            data_directory = tempfile.mkdtemp(prefix="ravendb-test-driver-")
+            options.data_directory = data_directory
+            atexit.register(cls.cleanup_temp_dirs, data_directory)
+            _LOGGER.info("Test server data and logs redirected to %s", data_directory)
 
         return options
 
     @classmethod
+    def _resolve_external_server_url(cls) -> Optional[str]:
+        """Explicit configuration beats the environment.
+
+        RAVENDB_TEST_SERVER_URL used to win over configure_server(), which silently redirected a
+        suite pinned to the embedded server onto someone else's - where the driver then creates
+        and hard-deletes databases.
+        """
+        if cls._EXTERNAL_SERVER_URL:
+            return cls._EXTERNAL_SERVER_URL
+
+        environment_url = os.environ.get("RAVENDB_TEST_SERVER_URL")
+        if environment_url and cls._GLOBAL_SERVER_OPTIONS is not None:
+            warnings.warn(
+                f"Ignoring RAVENDB_TEST_SERVER_URL={environment_url!r} because configure_server() "
+                "was called explicitly. Drop that call to attach to the server from the "
+                "environment; the driver creates and hard-deletes databases on whichever server "
+                "it ends up using.",
+                stacklevel=2,
+            )
+            return None
+
+        return environment_url
+
+    @classmethod
     def run_server(cls) -> DocumentStore:
-        external_url = cls._EXTERNAL_SERVER_URL or os.environ.get("RAVENDB_TEST_SERVER_URL")
+        external_url = cls._resolve_external_server_url()
         if external_url:
             # Attach to an existing server; do not boot the embedded one (no .NET needed).
             certificate = cls._EXTERNAL_SERVER_CERT or os.environ.get("RAVENDB_TEST_SERVER_CERT")
@@ -278,14 +442,12 @@ class RavenTestDriver:
             return store
 
         try:
-            options = RavenTestDriver._GLOBAL_SERVER_OPTIONS or RavenTestDriver.default_server_options()
-
-            command_line_args = options.command_line_args
-
-            command_line_args.insert(0, "-c")
-            command_line_args.insert(1, RavenTestDriver._get_empty_settings_file())
+            options = cls._GLOBAL_SERVER_OPTIONS or TestServerOptions()
+            cls._normalize_test_server_options(options)
         except Exception as e:
-            raise RavenException(f"Unable to start server: {e}")
+            # Only the option preparation above is wrapped; start_server below raises the
+            # embedded layer's own, richer error.
+            raise RavenException(f"Unable to prepare the test server options: {e}", e) from e
 
         cls._TEST_SERVER.start_server(options)
 
@@ -293,6 +455,42 @@ class RavenTestDriver:
 
         store = DocumentStore(url, None)
 
+        # A secured embedded server hands its client material to EmbeddedServer.start_server;
+        # without copying it here the test client cannot authenticate to the server we just booted.
+        if cls._TEST_SERVER.client_pem_certificate_path:
+            store.certificate_pem_path = cls._TEST_SERVER.client_pem_certificate_path
+        if cls._TEST_SERVER.trust_store_path:
+            store.trust_store_path = cls._TEST_SERVER.trust_store_path
+
         store.initialize()
 
         return store
+
+    @classmethod
+    def stop_test_server(cls) -> None:
+        """Close the shared test server and its server-level store.
+
+        Nothing else closes them: driver.close() only owns the per-test stores, so without this
+        the server lives until interpreter exit and its shutdown cost lands after the test runner
+        has printed its summary. Idempotent, and the server can be started again afterwards.
+        """
+        lazy = cls._TEST_SERVER_STORE
+        if lazy.is_value_created:
+            try:
+                lazy.value.close()
+            finally:
+                cls._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver.run_server())
+
+        cls._TEST_SERVER.close()
+
+    @classmethod
+    def reset_server_configuration(cls) -> None:
+        """Forget configure_server / configure_external_server, without touching the server.
+
+        Kept separate from stop_test_server on purpose: someone freeing resources should not
+        silently lose the configuration they registered.
+        """
+        cls._GLOBAL_SERVER_OPTIONS = None
+        cls._EXTERNAL_SERVER_URL = None
+        cls._EXTERNAL_SERVER_CERT = None
+        cls._EXTERNAL_SERVER_TRUST_STORE = None
