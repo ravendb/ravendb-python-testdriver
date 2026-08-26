@@ -1,6 +1,7 @@
 import atexit
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -39,10 +40,17 @@ _LOGGER = logging.getLogger(__name__)
 _WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_DRIVER_WAIT_FOR_USER"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
+# co_name values that are never a useful database name.
+_SYNTHETIC_FRAME_NAMES = frozenset({"<module>", "<lambda>", "<listcomp>", "<dictcomp>", "<setcomp>", "<genexpr>"})
+_DATABASE_NAME_STEM_MAX_LENGTH = 100
+
 
 class RavenTestDriver:
     # Test servers run in memory unless a subclass or a caller's command line says otherwise.
     run_in_memory: bool = True
+
+    # Off by default: switching it on changes every generated database name.
+    use_caller_name_for_database: bool = False
 
     _TEST_SERVER: EmbeddedServer = EmbeddedServer()
     _TEST_SERVER_STORE: Lazy[DocumentStore] = Lazy(lambda: RavenTestDriver.run_server())
@@ -126,9 +134,8 @@ class RavenTestDriver:
         options: Optional[GetDocumentStoreOptions] = None,
         database: Optional[str] = None,
     ) -> DocumentStore:
-        database = database or "test"
         options = options or GetDocumentStoreOptions()
-        name = f"{database}_{RavenTestDriver._next_index()}"
+        name = self._next_database_name(database)
         document_store = self._TEST_SERVER_STORE.value
 
         database_record = DatabaseRecord(name)
@@ -176,6 +183,34 @@ class RavenTestDriver:
         self._document_stores[store] = True
 
         return store
+
+    @classmethod
+    def _caller_name(cls, depth: int = 3) -> Optional[str]:
+        """The name of the test that asked for a store, C#'s [CallerMemberName] equivalent.
+
+        sys._getframe, not inspect.stack(): the latter builds FrameInfo records with source
+        context for every frame on the stack and costs milliseconds per call.
+        """
+        try:
+            frame_name = sys._getframe(depth).f_code.co_name
+        except ValueError:  # stack is not that deep
+            return None
+
+        if frame_name in _SYNTHETIC_FRAME_NAMES:
+            return None
+
+        # Database names are restricted; a co_name is normally already a Python identifier, but
+        # nothing guarantees it for generated or renamed code objects.
+        sanitized = re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name)[:_DATABASE_NAME_STEM_MAX_LENGTH]
+        return sanitized or None
+
+    @classmethod
+    def _next_database_name(cls, database: Optional[str] = None) -> str:
+        stem = database
+        if stem is None and cls.use_caller_name_for_database:
+            stem = cls._caller_name()
+
+        return f"{stem or 'test'}_{cls._next_index()}"
 
     def pre_initialize(self, document_store: DocumentStore) -> None:
         pass  # empty by design
