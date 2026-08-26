@@ -170,7 +170,7 @@ class TestCleanupTempDirs(TestCase):
         Path(directory, "file.txt").write_text("x", encoding="utf-8")
 
         started = time.monotonic()
-        RavenTestDriver.cleanup_temp_dirs(directory)
+        RavenTestDriver._cleanup_temp_dirs(directory)
         elapsed = time.monotonic() - started
 
         self.assertFalse(os.path.exists(directory))

@@ -4,6 +4,7 @@ Everything except the last class is hermetic: no server is started, so these run
 """
 
 import os
+import tempfile
 import warnings
 from datetime import timedelta
 from types import SimpleNamespace
@@ -251,6 +252,28 @@ class TestDriverCloseError(TestCase):
         self.assertIsInstance(caught.exception.exceptions[0], ValueError)
         # Subclasses RuntimeError, so existing handlers keep working.
         self.assertIsInstance(caught.exception, RuntimeError)
+
+
+class TestDeprecatedHelperAliases(TestCase):
+    def test_default_server_options_alias_still_works(self):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            options = RavenTestDriver.default_server_options()
+
+        self.assertEqual(["--RunInMemory=true"], _run_in_memory_args(options))
+        self.assertEqual(1, len(caught))
+        self.assertIs(DeprecationWarning, caught[0].category)
+        self.assertIn("_default_server_options", str(caught[0].message))
+
+    def test_cleanup_temp_dirs_alias_still_works(self):
+        directory = tempfile.mkdtemp()
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            RavenTestDriver.cleanup_temp_dirs(directory)
+
+        self.assertFalse(os.path.exists(directory))
+        self.assertIs(DeprecationWarning, caught[0].category)
 
 
 class TestSharedServerTeardown(TestCase):

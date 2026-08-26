@@ -55,7 +55,7 @@ class RavenTestDriver:
     use_caller_name_for_database: bool = False
 
     _TEST_SERVER: EmbeddedServer = EmbeddedServer()
-    _TEST_SERVER_STORE: Lazy[DocumentStore] = Lazy(lambda: RavenTestDriver.run_server())
+    _TEST_SERVER_STORE: Lazy[DocumentStore] = Lazy(lambda: RavenTestDriver._run_server())
     _INDEX = 0
     _INDEX_LOCK = threading.Lock()
     _GLOBAL_SERVER_OPTIONS: Optional[ServerOptions] = None
@@ -392,7 +392,7 @@ class RavenTestDriver:
             raise DriverCloseError(exceptions)
 
     @staticmethod
-    def cleanup_temp_dirs(*dirs: str) -> None:
+    def _cleanup_temp_dirs(*dirs: str) -> None:
         for _ in range(30):
             any_failure = False
             for dir_ in dirs:
@@ -408,7 +408,7 @@ class RavenTestDriver:
             time.sleep(0.2)
 
     @staticmethod
-    def default_server_options() -> ServerOptions:
+    def _default_server_options() -> ServerOptions:
         return RavenTestDriver._normalize_test_server_options(TestServerOptions())
 
     @classmethod
@@ -450,7 +450,7 @@ class RavenTestDriver:
         if default_data_directory is not None and options.data_directory == default_data_directory:
             data_directory = tempfile.mkdtemp(prefix="ravendb-test-driver-")
             options.data_directory = data_directory
-            atexit.register(cls.cleanup_temp_dirs, data_directory)
+            atexit.register(cls._cleanup_temp_dirs, data_directory)
             _LOGGER.info("Test server data and logs redirected to %s", data_directory)
 
         return options
@@ -480,7 +480,7 @@ class RavenTestDriver:
         return environment_url
 
     @classmethod
-    def run_server(cls) -> DocumentStore:
+    def _run_server(cls) -> DocumentStore:
         external_url = cls._resolve_external_server_url()
         if external_url:
             # Attach to an existing server; do not boot the embedded one (no .NET needed).
@@ -537,7 +537,7 @@ class RavenTestDriver:
             try:
                 lazy.value.close()
             finally:
-                cls._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver.run_server())
+                cls._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver._run_server())
 
         cls._TEST_SERVER.close()
 
@@ -552,3 +552,31 @@ class RavenTestDriver:
         cls._EXTERNAL_SERVER_URL = None
         cls._EXTERNAL_SERVER_CERT = None
         cls._EXTERNAL_SERVER_TRUST_STORE = None
+
+    # Aliases for helpers that were never meant to be public (C# has no equivalent of any of
+    # them, the JVM driver keeps all three private). Kept for one release so an upgrade cannot
+    # break on an AttributeError.
+
+    @staticmethod
+    def _deprecated_alias(old: str, new: str) -> None:
+        warnings.warn(
+            f"RavenTestDriver.{old}() is internal and will be removed in a future release; "
+            f"use {new}() if you really need it.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    @classmethod
+    def run_server(cls) -> DocumentStore:
+        cls._deprecated_alias("run_server", "_run_server")
+        return cls._run_server()
+
+    @staticmethod
+    def default_server_options() -> ServerOptions:
+        RavenTestDriver._deprecated_alias("default_server_options", "_default_server_options")
+        return RavenTestDriver._default_server_options()
+
+    @staticmethod
+    def cleanup_temp_dirs(*dirs: str) -> None:
+        RavenTestDriver._deprecated_alias("cleanup_temp_dirs", "_cleanup_temp_dirs")
+        RavenTestDriver._cleanup_temp_dirs(*dirs)

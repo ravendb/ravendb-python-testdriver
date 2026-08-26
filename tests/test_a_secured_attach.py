@@ -93,7 +93,7 @@ class TestSecuredAttach(TestCase):
         RavenTestDriver._EXTERNAL_SERVER_URL = None
         RavenTestDriver._EXTERNAL_SERVER_CERT = None
         RavenTestDriver._EXTERNAL_SERVER_TRUST_STORE = None
-        RavenTestDriver._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver.run_server())
+        RavenTestDriver._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver._run_server())
         RavenTestDriver._INDEX = 0
         for name in TestSecuredAttach._ENV_NAMES:
             os.environ.pop(name, None)
@@ -148,7 +148,7 @@ class TestSecuredAttach(TestCase):
         try:
             RavenTestDriver.configure_external_server("https://127.0.0.1:1")
             with self.assertRaisesRegex(RavenException, "needs a client certificate"):
-                RavenTestDriver.run_server()
+                RavenTestDriver._run_server()
         finally:
             self._reset_driver()
             for name, value in original_environment.items():
