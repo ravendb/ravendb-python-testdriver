@@ -56,6 +56,57 @@ No configuration is needed. The driver starts the framework-dependent server bun
 Run `dotnet --list-runtimes` and look for `Microsoft.NETCore.App`. Re-check the requirement when
 upgrading to a new RavenDB minor version.
 
+#### Where test data lives
+
+Embedded test servers run in memory, so the create-and-delete-a-database cycle behind every
+`get_document_store()` call never lands on disk. Only the server log is written, to a scratch
+directory the driver removes when the interpreter exits.
+
+Two consequences worth knowing:
+
+- A large fixture seeded in `setup_database` is held in RAM rather than spilled to disk.
+- Nothing survives a server restart, and there are no files to inspect after a failing run.
+
+To go back to disk-backed storage, either set the argument yourself, which the driver never
+overrides:
+
+```python
+options = TestServerOptions()
+options.command_line_args.append("--RunInMemory=false")
+options.data_directory = "/path/you/choose"
+RavenTestDriver.configure_server(options)
+```
+
+or switch it off for a whole test class:
+
+```python
+class MyDriver(RavenTestDriver):
+    run_in_memory = False
+```
+
+The driver also redirects the data directory when you leave it at the `ravendb-embedded` default,
+which otherwise points inside the installed package. Set `data_directory` explicitly and the
+driver leaves your path alone.
+
+Nothing closes the shared test server before interpreter exit. Call
+`RavenTestDriver.stop_test_server()` from a session-scoped fixture teardown when you want that
+cost inside your test run rather than after the runner prints its summary; the server starts
+again on the next `get_document_store()`.
+
+#### Secured embedded server
+
+Pass a server certificate together with the client PEM the tests authenticate with, and the driver
+wires that client material into every store it hands out:
+
+```python
+options = TestServerOptions()
+options.secured("server.pfx", "client.pem", ca_certificate_path="ca.crt")
+RavenTestDriver.configure_server(options)
+```
+
+The client PEM is required here: a secured server the test client cannot authenticate to is
+rejected before the server starts.
+
 Runnable walkthrough: [Lab 02 — isolated embedded databases](labs/02-embedded-per-test.md).
 
 ### On-demand self-contained server
@@ -63,10 +114,9 @@ Runnable walkthrough: [Lab 02 — isolated embedded databases](labs/02-embedded-
 Let the driver download, cache, and manage the self-contained build for the current platform:
 
 ```python
-from ravendb_embedded import ServerOptions
-from ravendb_test_driver import RavenTestDriver
+from ravendb_test_driver import RavenTestDriver, TestServerOptions
 
-options = ServerOptions()
+options = TestServerOptions()
 options.with_auto_downloaded_server()
 RavenTestDriver.configure_server(options)
 
@@ -74,6 +124,9 @@ with RavenTestDriver() as driver:
     with driver.get_document_store() as store:
         ...
 ```
+
+`TestServerOptions` is a `ravendb_embedded.ServerOptions` that names the intent. `configure_server`
+still accepts a plain `ServerOptions`, and the driver applies the same test defaults either way.
 
 The same test configuration works across supported Windows, Linux, and macOS machines because the
 operating system and architecture are detected at runtime. The first run downloads 100 MB+;
@@ -128,12 +181,18 @@ The equivalent environment variables are:
 `trust_store_path` or `RAVENDB_TEST_SERVER_CA` is needed when the server's CA is not already
 trusted by the test machine.
 
+Explicit configuration wins over the environment. If a test calls `configure_server()` and
+`RAVENDB_TEST_SERVER_URL` is also set, the environment variable is ignored and a warning is
+emitted, because the driver creates and hard-deletes databases on whichever server it uses. To let
+the environment pick the server, do not call `configure_server()`.
+
 Runnable walkthrough: [Lab 01 — Docker, Testcontainers, and shared servers](labs/01-attach-to-server.md).
 
 ## Test lifecycle
 
-Create a `RavenTestDriver` for the test or fixture, then close every returned store. A context
-manager handles both steps:
+Create a `RavenTestDriver` for the test or fixture. Closing the driver closes any store you left
+open and deletes its database, so nothing leaks if a test throws halfway. Context managers make
+both steps explicit:
 
 ```python
 from unittest import TestCase
@@ -150,7 +209,12 @@ class TestPeople(TestCase):
 ```
 
 Each `get_document_store()` call creates a new database. Closing the store deletes it, which keeps
-tests independent even when they share one RavenDB server process.
+tests independent even when they share one RavenDB server process. Database names are generated
+(`test_1`, `test_2`, ...) from a process-wide counter; treat them as opaque and read
+`store.database` rather than assuming a name, or pass `database="..."` to pick the stem yourself.
+
+If closing the driver hits errors, it raises `DriverCloseError`, a `RuntimeError` subclass whose
+`exceptions` attribute holds every original exception rather than a joined string.
 
 ## Seed data and wait for indexing
 
@@ -165,11 +229,30 @@ class PeopleTestDriver(RavenTestDriver):
             session.save_changes()
 ```
 
-Use `GetDocumentStoreOptions.wait_for_indexing_timeout` when a store should not be returned until
-indexing settles, or call `wait_for_indexing(store)` directly.
+Override `pre_configure_database(self, database_record)` to change the database itself before it is
+created, for settings, revisions, expiration, encryption or topology:
 
-`wait_for_user_to_continue_the_test(store)` opens RavenDB Studio and pauses the test for manual
-inspection.
+```python
+class PeopleTestDriver(RavenTestDriver):
+    def pre_configure_database(self, database_record):
+        database_record.settings["Indexing.MapTimeoutInSec"] = "30"
+```
+
+Use `GetDocumentStoreOptions.wait_for_indexing_timeout` when a store should not be returned until
+indexing settles, or call `wait_for_indexing(store)` directly. It waits until every applicable
+index is non-stale and any side-by-side replacement has been swapped in.
+
+## Pausing for manual inspection
+
+`wait_for_user_to_continue_the_test(store)` prints the Studio URL for that database, opens a
+browser, and blocks until a document with the id `Debug/Done` shows up in the database. Store one
+from Studio to continue; the driver deletes the marker so a later wait on the same store still
+blocks.
+
+The wait is bounded by a five-minute timeout and then raises `TimeoutException`, so a call left in
+committed code fails a CI job instead of hanging it. Pass `timeout=None` to wait indefinitely,
+which is also what happens automatically when a debugger is attached, or set
+`RAVENDB_TEST_DRIVER_WAIT_FOR_USER=0` to skip the wait entirely.
 
 Runnable walkthrough: [Lab 03 — seeding and indexes](labs/03-seeding-indexes.md).
 
