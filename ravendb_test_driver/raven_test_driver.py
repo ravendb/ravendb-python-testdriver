@@ -37,7 +37,9 @@ from ravendb_test_driver.options import GetDocumentStoreOptions, TestServerOptio
 
 _LOGGER = logging.getLogger(__name__)
 
-_WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_DRIVER_WAIT_FOR_USER"
+_WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_WAIT_FOR_USER"
+_DEFAULT_WAIT_FOR_USER_TIMEOUT = timedelta(minutes=5)
+_UNSET_TIMEOUT = object()
 _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
 _STRICT_LICENSE_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_STRICT_LICENSE"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
@@ -47,8 +49,6 @@ _DATABASE_NAME_STEM_MAX_LENGTH = 100
 
 
 class RavenTestDriver:
-    run_in_memory: bool = True
-
     use_caller_name_for_database: bool = False
 
     _TEST_SERVER: EmbeddedServer = EmbeddedServer()
@@ -89,9 +89,8 @@ class RavenTestDriver:
     @staticmethod
     def _get_empty_settings_file() -> str:
         if not RavenTestDriver._EMPTY_SETTINGS_FILE_NAME:
-            temp_file = tempfile.NamedTemporaryFile(delete=False, prefix="settings-", suffix=".json")
-            temp_file.write(b"{}")
-            temp_file.close()
+            with tempfile.NamedTemporaryFile(delete=False, prefix="settings-", suffix=".json") as temp_file:
+                temp_file.write(b"{}")
             RavenTestDriver._EMPTY_SETTINGS_FILE_NAME = temp_file.name
             # Registered before the server's own atexit hook, so it runs after it (LIFO).
             atexit.register(RavenTestDriver._remove_empty_settings_file, temp_file.name)
@@ -183,30 +182,33 @@ class RavenTestDriver:
             if "NoLeaderException" not in str(e):
                 raise
 
-    @classmethod
-    def _caller_name(cls, depth: int = 3) -> Optional[str]:
-        """The calling test's name, C#'s [CallerMemberName] equivalent.
-
-        sys._getframe, not inspect.stack(): the latter costs milliseconds per call.
-        """
-        try:
-            frame_name = sys._getframe(depth).f_code.co_name
-        except ValueError:  # stack is not that deep
-            return None
-
+    @staticmethod
+    def _database_stem(frame_name: str) -> Optional[str]:
         if frame_name in _SYNTHETIC_FRAME_NAMES:
             return None
 
-        sanitized = re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name)[:_DATABASE_NAME_STEM_MAX_LENGTH]
-        return sanitized or None
+        return re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name)[:_DATABASE_NAME_STEM_MAX_LENGTH] or None
 
     @staticmethod
-    def _environment_flag(name: str) -> bool:
-        value = os.environ.get(name)
-        if value is None:
-            return False
-        value = value.strip().lower()
-        return bool(value) and value not in _FALSY_ENVIRONMENT_VALUES
+    def _caller_name() -> Optional[str]:
+        """The calling test's name, C#'s [CallerMemberName] equivalent.
+
+        Walks out of this module instead of counting frames, so adding a driver-internal call
+        cannot silently rename every database. sys._getframe, not inspect.stack(): the latter
+        costs milliseconds per call.
+        """
+        frame = sys._getframe(1)
+        while frame is not None and frame.f_globals.get("__name__") == __name__:
+            frame = frame.f_back
+
+        return RavenTestDriver._database_stem(frame.f_code.co_name) if frame is not None else None
+
+    @staticmethod
+    def _environment_flag(name: str, default: bool = False) -> bool:
+        value = os.environ.get(name, "").strip().lower()
+        if not value:
+            return default
+        return value not in _FALSY_ENVIRONMENT_VALUES
 
     @classmethod
     def _next_database_name(cls, database: Optional[str] = None) -> str:
@@ -299,20 +301,20 @@ class RavenTestDriver:
     def wait_for_user_to_continue_the_test(
         self,
         store: DocumentStore,
-        timeout: Optional[timedelta] = timedelta(minutes=5),
+        timeout: Optional[timedelta] = _UNSET_TIMEOUT,
     ) -> None:
         """Open Studio and block until a 'Debug/Done' document shows up in this database.
 
-        Bounded by `timeout` so a call left in committed code fails a CI job fast instead of
-        hanging it; pass timeout=None to wait forever. Set RAVENDB_TEST_DRIVER_WAIT_FOR_USER to
+        Bounded by `timeout`, five minutes by default, so a call left in committed code fails a
+        CI job fast instead of hanging it. Pass timeout=None to wait forever; with no timeout given
+        an attached debugger makes the wait unbounded. Set RAVENDB_TEST_WAIT_FOR_USER to
         0/false/no/off to skip the wait entirely.
         """
-        environment_value = os.environ.get(_WAIT_FOR_USER_ENVIRONMENT_VARIABLE)
-        if environment_value is not None and environment_value.strip().lower() in _FALSY_ENVIRONMENT_VALUES:
+        if not self._environment_flag(_WAIT_FOR_USER_ENVIRONMENT_VARIABLE, default=True):
             return
 
-        if self._is_debugger_attached():
-            timeout = None
+        if timeout is _UNSET_TIMEOUT:
+            timeout = None if self._is_debugger_attached() else _DEFAULT_WAIT_FOR_USER_TIMEOUT
 
         database_name_encoded = quote(store.database, safe="")
         documents_page = (
@@ -401,7 +403,7 @@ class RavenTestDriver:
 
         Idempotent, and it never overrides a value the caller set explicitly.
         """
-        security = getattr(options, "security", None)
+        security = options.security
         if security is not None and not security.client_pem_certificate_path:
             raise RavenException(
                 "A secured test server needs a client certificate the test client can "
@@ -420,14 +422,15 @@ class RavenTestDriver:
         if settings_file not in command_line_args:
             command_line_args[:0] = ["-c", settings_file]
 
-        if cls.run_in_memory and not any(arg.startswith("--RunInMemory") for arg in command_line_args):
+        if getattr(options, "run_in_memory", True) and not any(
+            arg.startswith("--RunInMemory") for arg in command_line_args
+        ):
             command_line_args.append("--RunInMemory=true")
 
         options.command_line_args = command_line_args
 
         # The embedded default sits inside the installed package. Logs follow the data directory.
-        default_data_directory = getattr(ServerOptions, "_DEFAULT_DATA_DIRECTORY", None)
-        if default_data_directory is not None and options.data_directory == default_data_directory:
+        if options.data_directory == ServerOptions._DEFAULT_DATA_DIRECTORY:
             data_directory = tempfile.mkdtemp(prefix="ravendb-test-driver-")
             options.data_directory = data_directory
             atexit.register(cls._cleanup_temp_dirs, data_directory)
@@ -479,6 +482,8 @@ class RavenTestDriver:
         try:
             options = cls._GLOBAL_SERVER_OPTIONS or TestServerOptions()
             cls._normalize_test_server_options(options)
+        except RavenException:
+            raise  # already explains itself; a second wrapper would only hide it
         except Exception as e:
             # Only option preparation is wrapped; start_server raises the embedded layer's error.
             raise RavenException(f"Unable to prepare the test server options: {e}", e) from e
@@ -506,22 +511,22 @@ class RavenTestDriver:
         Nothing else closes them, so without this the cost lands at interpreter exit.
         Idempotent, and the server can be started again afterwards.
         """
-        lazy = cls._TEST_SERVER_STORE
+        lazy = RavenTestDriver._TEST_SERVER_STORE
         if lazy.is_value_created:
             try:
                 lazy.value.close()
             finally:
-                cls._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver._run_server())
+                RavenTestDriver._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver._run_server())
 
-        cls._TEST_SERVER.close()
+        RavenTestDriver._TEST_SERVER.close()
 
     @classmethod
     def reset_server_configuration(cls) -> None:
         """Forget configure_server / configure_external_server, without touching the server."""
-        cls._GLOBAL_SERVER_OPTIONS = None
-        cls._EXTERNAL_SERVER_URL = None
-        cls._EXTERNAL_SERVER_CERT = None
-        cls._EXTERNAL_SERVER_TRUST_STORE = None
+        RavenTestDriver._GLOBAL_SERVER_OPTIONS = None
+        RavenTestDriver._EXTERNAL_SERVER_URL = None
+        RavenTestDriver._EXTERNAL_SERVER_CERT = None
+        RavenTestDriver._EXTERNAL_SERVER_TRUST_STORE = None
 
     # Never meant to be public (private in the JVM driver, absent in C#). Kept for one release.
 

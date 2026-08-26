@@ -79,11 +79,12 @@ options.data_directory = "/path/you/choose"
 RavenTestDriver.configure_server(options)
 ```
 
-or switch it off for a whole test class:
+or switch it off on the options themselves:
 
 ```python
-class MyDriver(RavenTestDriver):
-    run_in_memory = False
+options = TestServerOptions()
+options.run_in_memory = False
+RavenTestDriver.configure_server(options)
 ```
 
 The driver also redirects the data directory when you leave it at the `ravendb-embedded` default,
@@ -254,7 +255,7 @@ blocks.
 The wait is bounded by a five-minute timeout and then raises `TimeoutException`, so a call left in
 committed code fails a CI job instead of hanging it. Pass `timeout=None` to wait indefinitely,
 which is also what happens automatically when a debugger is attached, or set
-`RAVENDB_TEST_DRIVER_WAIT_FOR_USER=0` to skip the wait entirely.
+`RAVENDB_TEST_WAIT_FOR_USER=0` to skip the wait entirely.
 
 Runnable walkthrough: [Lab 03 — seeding and indexes](labs/03-seeding-indexes.md).
 
@@ -264,11 +265,11 @@ Defaults are chosen so an existing suite keeps working. These are the knobs wort
 
 | Switch | Default | What it does |
 |--------|---------|--------------|
-| `RavenTestDriver.run_in_memory` | `True` | Runs embedded test servers in memory. Set `False` on a driver subclass to go back to disk |
+| `TestServerOptions.run_in_memory` | `True` | Runs embedded test servers in memory. Set `False` on the options you pass to `configure_server` to go back to disk |
 | `RavenTestDriver.use_caller_name_for_database` | `False` | Names databases after the calling test (`test_stores_a_person_3`) instead of `test_3` |
 | `RAVENDB_TEST_UNIQUE_DB_NAMES` | off | Adds the process id to database names, so parallel runners sharing one attached server stop colliding |
 | `RAVENDB_TEST_STRICT_LICENSE` | off | Test servers refuse to start without a valid licence, matching the .NET test driver |
-| `RAVENDB_TEST_DRIVER_WAIT_FOR_USER` | on | Set to `0` to skip `wait_for_user_to_continue_the_test` entirely |
+| `RAVENDB_TEST_WAIT_FOR_USER` | on | Set to `0` to skip `wait_for_user_to_continue_the_test` entirely |
 
 Caller-name databases are sanitized to `[A-Za-z0-9_.-]` and truncated, and fall back to `test` when
 the caller has no usable name, such as a lambda or a module-level call.

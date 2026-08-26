@@ -17,7 +17,7 @@ from ravendb.documents.indexes.definitions import IndexState
 from ravendb.documents.operations.statistics import IndexInformation
 from ravendb.exceptions.exceptions import TimeoutException
 
-from ravendb_test_driver import RavenTestDriver
+from ravendb_test_driver import DriverCloseError, RavenTestDriver
 
 
 class TestDriverClose(TestCase):
@@ -50,6 +50,24 @@ class TestDriverClose(TestCase):
         driver.close()
 
         self.assertTrue(driver.disposed)
+
+
+class TestDriverCloseError(TestCase):
+    def test_a_raising_callback_is_collected_not_swallowed(self):
+        driver = RavenTestDriver()
+
+        def explode(_):
+            raise ValueError("callback blew up")
+
+        driver.on_driver_closed = explode
+
+        with self.assertRaises(DriverCloseError) as caught:
+            driver.close()
+
+        self.assertEqual(1, len(caught.exception.exceptions))
+        self.assertIsInstance(caught.exception.exceptions[0], ValueError)
+        # Subclasses RuntimeError, so existing handlers keep working.
+        self.assertIsInstance(caught.exception, RuntimeError)
 
 
 class TestDatabaseNameAllocation(TestCase):

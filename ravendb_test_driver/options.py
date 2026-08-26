@@ -16,6 +16,14 @@ class TestServerOptions(ServerOptions):
     test-only defaults that cannot be inferred from a plain `ServerOptions` will live.
     """
 
+    # pytest collects Test*-named classes it finds in a test module's namespace, imported ones
+    # included, and warns about the __init__ it cannot construct.
+    __test__ = False
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.run_in_memory: bool = True
+
 
 class GetDocumentStoreOptions:
     def __init__(self):

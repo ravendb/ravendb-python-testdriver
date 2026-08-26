@@ -15,7 +15,8 @@ from ravendb.exceptions.exceptions import TimeoutException
 from ravendb.exceptions.raven_exceptions import RavenException
 from ravendb_embedded import ServerOptions
 
-from ravendb_test_driver import DriverCloseError, RavenTestDriver, TestServerOptions
+from ravendb_test_driver import RavenTestDriver, TestServerOptions
+from tests.support import attach_mode_is_active, isolate_environment
 
 
 def _run_in_memory_args(options):
@@ -49,11 +50,11 @@ class TestOptionNormalization(TestCase):
 
         self.assertEqual(["--RunInMemory=false"], _run_in_memory_args(options))
 
-    def test_run_in_memory_can_be_switched_off_on_the_driver(self):
-        class _OnDiskDriver(RavenTestDriver):
-            run_in_memory = False
+    def test_run_in_memory_can_be_switched_off_on_the_options(self):
+        options = TestServerOptions()
+        options.run_in_memory = False
 
-        options = _OnDiskDriver._normalize_test_server_options(ServerOptions())
+        RavenTestDriver._normalize_test_server_options(options)
 
         self.assertEqual([], _run_in_memory_args(options))
 
@@ -94,11 +95,7 @@ class TestOptionNormalization(TestCase):
 
 class TestStrictLicenseOptIn(TestCase):
     def setUp(self):
-        previous = os.environ.get("RAVENDB_TEST_STRICT_LICENSE")
-        if previous is None:
-            self.addCleanup(os.environ.pop, "RAVENDB_TEST_STRICT_LICENSE", None)
-        else:
-            self.addCleanup(os.environ.__setitem__, "RAVENDB_TEST_STRICT_LICENSE", previous)
+        isolate_environment(self)
 
     def test_is_off_by_default(self):
         os.environ.pop("RAVENDB_TEST_STRICT_LICENSE", None)
@@ -128,11 +125,7 @@ class TestServerSelectionPrecedence(TestCase):
     def setUp(self):
         self.addCleanup(setattr, RavenTestDriver, "_GLOBAL_SERVER_OPTIONS", RavenTestDriver._GLOBAL_SERVER_OPTIONS)
         self.addCleanup(setattr, RavenTestDriver, "_EXTERNAL_SERVER_URL", RavenTestDriver._EXTERNAL_SERVER_URL)
-        previous_url = os.environ.get("RAVENDB_TEST_SERVER_URL")
-        if previous_url is None:
-            self.addCleanup(os.environ.pop, "RAVENDB_TEST_SERVER_URL", None)
-        else:
-            self.addCleanup(os.environ.__setitem__, "RAVENDB_TEST_SERVER_URL", previous_url)
+        isolate_environment(self)
 
     def test_configure_external_server_wins_over_the_environment(self):
         RavenTestDriver._GLOBAL_SERVER_OPTIONS = None
@@ -206,14 +199,10 @@ class _SilentDriver(RavenTestDriver):
 class TestWaitForUserToContinueTheTest(TestCase):
     def setUp(self):
         _SilentDriver.opened = []
-        previous = os.environ.get("RAVENDB_TEST_DRIVER_WAIT_FOR_USER")
-        if previous is None:
-            self.addCleanup(os.environ.pop, "RAVENDB_TEST_DRIVER_WAIT_FOR_USER", None)
-        else:
-            self.addCleanup(os.environ.__setitem__, "RAVENDB_TEST_DRIVER_WAIT_FOR_USER", previous)
+        isolate_environment(self)
 
     def test_environment_kill_switch_skips_the_wait_entirely(self):
-        os.environ["RAVENDB_TEST_DRIVER_WAIT_FOR_USER"] = "0"
+        os.environ["RAVENDB_TEST_WAIT_FOR_USER"] = "0"
         store = _FakeStore()
 
         _SilentDriver().wait_for_user_to_continue_the_test(store)
@@ -235,24 +224,6 @@ class TestWaitForUserToContinueTheTest(TestCase):
         _SilentDriver().wait_for_user_to_continue_the_test(store, timeout=timedelta(seconds=5))
 
         self.assertEqual(["Debug/Done"], store.sessions[-1].deleted)
-
-
-class TestDriverCloseError(TestCase):
-    def test_a_raising_callback_is_collected_not_swallowed(self):
-        driver = RavenTestDriver()
-
-        def explode(_):
-            raise ValueError("callback blew up")
-
-        driver.on_driver_closed = explode
-
-        with self.assertRaises(DriverCloseError) as caught:
-            driver.close()
-
-        self.assertEqual(1, len(caught.exception.exceptions))
-        self.assertIsInstance(caught.exception.exceptions[0], ValueError)
-        # Subclasses RuntimeError, so existing handlers keep working.
-        self.assertIsInstance(caught.exception, RuntimeError)
 
 
 class TestDeprecatedHelperAliases(TestCase):
@@ -292,7 +263,7 @@ class TestSharedServerTeardown(TestCase):
     """Runs last on purpose: it stops the server the rest of the suite shares."""
 
     def test_stop_test_server_is_idempotent_and_the_server_comes_back(self):
-        if RavenTestDriver._EXTERNAL_SERVER_URL or os.environ.get("RAVENDB_TEST_SERVER_URL"):
+        if attach_mode_is_active():
             self.skipTest("attach mode: the driver does not own the server")
 
         with RavenTestDriver() as driver:

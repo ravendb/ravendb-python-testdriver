@@ -4,6 +4,7 @@ import datetime
 import ipaddress
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -19,6 +20,13 @@ ENVIRONMENT_NAMES = ("RAVENDB_TEST_SERVER_URL", "RAVENDB_TEST_SERVER_CERT", "RAV
 def attach_mode_is_active() -> bool:
     """True when the suite is pointed at a server it does not own, so embedded tests must skip."""
     return bool(RavenTestDriver._EXTERNAL_SERVER_URL or os.environ.get("RAVENDB_TEST_SERVER_URL"))
+
+
+def isolate_environment(test) -> None:
+    """Restore os.environ exactly as it was once `test` finishes."""
+    patcher = patch.dict(os.environ)
+    patcher.start()
+    test.addCleanup(patcher.stop)
 
 
 def reset_driver() -> None:

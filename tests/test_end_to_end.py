@@ -18,7 +18,7 @@ from ravendb import GetDatabaseNamesOperation
 from ravendb.documents.indexes.abstract_index_creation_tasks import AbstractIndexCreationTask
 
 from ravendb_test_driver import GetDocumentStoreOptions, RavenTestDriver, TestServerOptions
-from tests.support import attach_mode_is_active, certificates, reset_driver
+from tests.support import attach_mode_is_active, certificates, isolate_environment, reset_driver
 
 skip_without_own_server = skipIf(attach_mode_is_active(), "attach mode: the driver does not own the server")
 
@@ -68,11 +68,7 @@ class TestDatabaseLifecycle(TestCase):
 class TestDatabaseNamingAgainstServer(TestCase):
     def setUp(self):
         self.addCleanup(setattr, RavenTestDriver, "use_caller_name_for_database", False)
-        previous = os.environ.get("RAVENDB_TEST_UNIQUE_DB_NAMES")
-        if previous is None:
-            self.addCleanup(os.environ.pop, "RAVENDB_TEST_UNIQUE_DB_NAMES", None)
-        else:
-            self.addCleanup(os.environ.__setitem__, "RAVENDB_TEST_UNIQUE_DB_NAMES", previous)
+        isolate_environment(self)
 
     def test_caller_name_and_process_id_reach_the_created_database(self):
         RavenTestDriver.use_caller_name_for_database = True

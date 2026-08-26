@@ -3,30 +3,17 @@ import tempfile
 from pathlib import Path
 from unittest import TestCase
 
-from ravendb import Lazy
 from ravendb.exceptions.raven_exceptions import RavenException
 from ravendb_embedded import EmbeddedServer, ServerOptions
 
-from tests.support import certificates
+from tests.support import ENVIRONMENT_NAMES, certificates, reset_driver
 
 from ravendb_test_driver import RavenTestDriver
 
 
 class TestSecuredAttach(TestCase):
-    _ENV_NAMES = ("RAVENDB_TEST_SERVER_URL", "RAVENDB_TEST_SERVER_CERT", "RAVENDB_TEST_SERVER_CA")
-
-    @staticmethod
-    def _reset_driver():
-        lazy = RavenTestDriver._TEST_SERVER_STORE
-        if lazy.is_value_created:
-            lazy.value.close()
-        RavenTestDriver._EXTERNAL_SERVER_URL = None
-        RavenTestDriver._EXTERNAL_SERVER_CERT = None
-        RavenTestDriver._EXTERNAL_SERVER_TRUST_STORE = None
-        RavenTestDriver._TEST_SERVER_STORE = Lazy(lambda: RavenTestDriver._run_server())
-        RavenTestDriver._INDEX = 0
-        for name in TestSecuredAttach._ENV_NAMES:
-            os.environ.pop(name, None)
+    _ENV_NAMES = ENVIRONMENT_NAMES
+    _reset_driver = staticmethod(reset_driver)
 
     def _write_and_read(self, database):
         with RavenTestDriver() as driver:

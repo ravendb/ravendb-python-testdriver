@@ -4,14 +4,11 @@ import os
 from unittest import TestCase
 
 from ravendb_test_driver import RavenTestDriver
+from tests.support import isolate_environment
 
 
 class _CallerNameDriver(RavenTestDriver):
     use_caller_name_for_database = True
-
-    def name_for_test(self):
-        # Stands in for get_document_store, so _caller_name sees the same call depth.
-        return self._next_database_name(None)
 
 
 class TestCallerNameOptIn(TestCase):
@@ -20,7 +17,7 @@ class TestCallerNameOptIn(TestCase):
         self.assertTrue(RavenTestDriver()._next_database_name(None).startswith("test_"))
 
     def test_uses_the_calling_test_name_when_switched_on(self):
-        name = _CallerNameDriver().name_for_test()
+        name = _CallerNameDriver()._next_database_name(None)
 
         self.assertTrue(name.startswith("test_uses_the_calling_test_name_when_switched_on_"), name)
 
@@ -37,29 +34,18 @@ class TestCallerNameOptIn(TestCase):
         self.assertTrue(name.startswith("test_"), name)
 
     def test_illegal_characters_are_replaced(self):
-        def _name():
-            return RavenTestDriver._caller_name(depth=1)
+        self.assertEqual("weird_name_with_chars", RavenTestDriver._database_stem("weird name/with:chars"))
 
-        _name.__code__ = _name.__code__.replace(co_name="weird name/with:chars")
+    def test_a_long_name_is_truncated(self):
+        self.assertEqual(100, len(RavenTestDriver._database_stem("x" * 300)))
 
-        self.assertEqual("weird_name_with_chars", _name())
-
-    def test_caller_name_is_truncated(self):
-        def _name():
-            return RavenTestDriver._caller_name(depth=1)
-
-        _name.__code__ = _name.__code__.replace(co_name="x" * 300)
-
-        self.assertEqual(100, len(_name()))
+    def test_synthetic_names_have_no_stem(self):
+        self.assertIsNone(RavenTestDriver._database_stem("<lambda>"))
 
 
 class TestPerProcessUniqueness(TestCase):
     def setUp(self):
-        previous = os.environ.get("RAVENDB_TEST_UNIQUE_DB_NAMES")
-        if previous is None:
-            self.addCleanup(os.environ.pop, "RAVENDB_TEST_UNIQUE_DB_NAMES", None)
-        else:
-            self.addCleanup(os.environ.__setitem__, "RAVENDB_TEST_UNIQUE_DB_NAMES", previous)
+        isolate_environment(self)
 
     def test_is_off_by_default(self):
         os.environ.pop("RAVENDB_TEST_UNIQUE_DB_NAMES", None)
