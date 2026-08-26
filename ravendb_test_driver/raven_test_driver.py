@@ -42,16 +42,13 @@ _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
 _STRICT_LICENSE_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_STRICT_LICENSE"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
-# co_name values that are never a useful database name.
 _SYNTHETIC_FRAME_NAMES = frozenset({"<module>", "<lambda>", "<listcomp>", "<dictcomp>", "<setcomp>", "<genexpr>"})
 _DATABASE_NAME_STEM_MAX_LENGTH = 100
 
 
 class RavenTestDriver:
-    # Test servers run in memory unless a subclass or a caller's command line says otherwise.
     run_in_memory: bool = True
 
-    # Off by default: switching it on changes every generated database name.
     use_caller_name_for_database: bool = False
 
     _TEST_SERVER: EmbeddedServer = EmbeddedServer()
@@ -77,8 +74,7 @@ class RavenTestDriver:
 
     @staticmethod
     def _next_index() -> int:
-        # Qualified with RavenTestDriver on purpose: 'cls._INDEX += 1' would shadow the class
-        # attribute with a subclass (or instance) one and every driver would restart at 1.
+        # Qualified, not cls: 'cls._INDEX += 1' would shadow the counter per subclass.
         with RavenTestDriver._INDEX_LOCK:
             RavenTestDriver._INDEX += 1
             return RavenTestDriver._INDEX
@@ -97,7 +93,7 @@ class RavenTestDriver:
             temp_file.write(b"{}")
             temp_file.close()
             RavenTestDriver._EMPTY_SETTINGS_FILE_NAME = temp_file.name
-            # Registered before the embedded server's own atexit hook, so it runs after it (LIFO).
+            # Registered before the server's own atexit hook, so it runs after it (LIFO).
             atexit.register(RavenTestDriver._remove_empty_settings_file, temp_file.name)
         return RavenTestDriver._EMPTY_SETTINGS_FILE_NAME
 
@@ -161,8 +157,7 @@ class RavenTestDriver:
             except KeyError:
                 return
 
-            # database_record.database_name, not store.database: a subclass may have renamed the
-            # record in pre_configure_database, and the database it created is the one to delete.
+            # The record's name, not store.database: pre_configure_database may rename it.
             self._delete_test_database(store, database_record.database_name)
 
         store.add_after_close(__close_event_callback)
@@ -184,18 +179,15 @@ class RavenTestDriver:
         except (DatabaseDoesNotExistException, NoLoaderException):
             pass  # already gone, or the cluster has no leader right now
         except RavenException as e:
-            # The client registers the server's NoLeaderException under a misspelled key
-            # ('NoLoaderException'), so a real no-leader failure arrives as a plain
-            # RavenException. Drop this branch once the client mapping is fixed.
+            # The client maps NoLeaderException under a misspelled key, so it arrives untyped.
             if "NoLeaderException" not in str(e):
                 raise
 
     @classmethod
     def _caller_name(cls, depth: int = 3) -> Optional[str]:
-        """The name of the test that asked for a store, C#'s [CallerMemberName] equivalent.
+        """The calling test's name, C#'s [CallerMemberName] equivalent.
 
-        sys._getframe, not inspect.stack(): the latter builds FrameInfo records with source
-        context for every frame on the stack and costs milliseconds per call.
+        sys._getframe, not inspect.stack(): the latter costs milliseconds per call.
         """
         try:
             frame_name = sys._getframe(depth).f_code.co_name
@@ -205,8 +197,6 @@ class RavenTestDriver:
         if frame_name in _SYNTHETIC_FRAME_NAMES:
             return None
 
-        # Database names are restricted; a co_name is normally already a Python identifier, but
-        # nothing guarantees it for generated or renamed code objects.
         sanitized = re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name)[:_DATABASE_NAME_STEM_MAX_LENGTH]
         return sanitized or None
 
@@ -226,8 +216,7 @@ class RavenTestDriver:
 
         parts = [stem or "test"]
         if cls._environment_flag(_UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE):
-            # The counter alone restarts at 1 in every process, so two runners sharing one
-            # attached server hand out the same name and delete each other's databases.
+            # The counter restarts per process, so runners sharing a server would collide.
             parts.append(str(os.getpid()))
         parts.append(str(cls._next_index()))
 
@@ -255,9 +244,7 @@ class RavenTestDriver:
         while time.monotonic() - start_time < timeout.total_seconds():
             database_statistics = admin.send(GetStatisticsOperation())
 
-            # Return only once every applicable index is non-stale AND no side-by-side
-            # replacement is left, so a pending index swap keeps us waiting instead of
-            # handing the caller results from the pre-swap index.
+            # A replacement index holds the wait: until the swap lands, queries hit the old one.
             pending = [
                 x
                 for x in database_statistics.indexes
@@ -290,9 +277,7 @@ class RavenTestDriver:
     def _is_debugger_attached() -> bool:
         """Used only to make the wait unbounded, never to skip it.
 
-        sys.gettrace() is deliberately not consulted: coverage.py installs a trace function, so
-        every pytest-cov run would claim a debugger is attached. A false negative here costs the
-        default timeout, not a silently skipped inspection point.
+        sys.gettrace() is not consulted: coverage.py would make every run look debugged.
         """
         debugpy = sys.modules.get("debugpy")
         if debugpy is not None:
@@ -347,8 +332,7 @@ class RavenTestDriver:
 
             time.sleep(0.5)
             with store.open_session() as session:
-                # Existence check instead of load(): no document is tracked, and the marker is
-                # deleted so a later wait on the same store cannot return on a stale one.
+                # Deleted after the wait, so a later one cannot return on a stale marker.
                 if session.advanced.exists("Debug/Done"):
                     session.delete("Debug/Done")
                     session.save_changes()
@@ -363,8 +347,7 @@ class RavenTestDriver:
             raise RuntimeError(f"Failed to open a browser at {url}") from e
 
         if not opened:
-            # Headless machines return False rather than raising. The wait itself still works
-            # through the Debug/Done marker, so this is a note, not a failure.
+            # Headless machines return False rather than raising; the wait still works.
             print("No browser could be opened here; use the URL above.")
 
     def close(self) -> None:
@@ -374,8 +357,7 @@ class RavenTestDriver:
         exceptions = []
 
         try:
-            # Snapshot: each store's after-close callback pops itself out of _document_stores,
-            # and mutating the dict we iterate raises RuntimeError from the for statement itself.
+            # Snapshot: each store's after-close callback pops itself out of this dict.
             for document_store in list(self._document_stores):
                 try:
                     document_store.close()
@@ -385,8 +367,7 @@ class RavenTestDriver:
             self.disposed = True
 
         if self.on_driver_closed:
-            # Collected, not raised on the spot: a raising callback used to discard every
-            # store-close error gathered above.
+            # Collected, so a raising callback cannot discard the store-close errors.
             try:
                 self.on_driver_closed(self)
             except Exception as e:
@@ -402,8 +383,7 @@ class RavenTestDriver:
             for dir_ in dirs:
                 if not os.path.exists(dir_):
                     continue
-                # rmtree returns None, so its return value says nothing about success;
-                # the directory still being there is the only real signal.
+                # rmtree returns None; the directory still being there is the only signal.
                 shutil.rmtree(dir_, ignore_errors=True)
                 if os.path.exists(dir_):
                     any_failure = True
@@ -419,9 +399,7 @@ class RavenTestDriver:
     def _normalize_test_server_options(cls, options: ServerOptions) -> ServerOptions:
         """Give any ServerOptions the defaults a test server needs.
 
-        This is what C# gets from typing ConfigureServer(TestServerOptions), without breaking
-        callers who pass a plain ServerOptions. Idempotent, and it never overrides a value the
-        caller set explicitly.
+        Idempotent, and it never overrides a value the caller set explicitly.
         """
         security = getattr(options, "security", None)
         if security is not None and not security.client_pem_certificate_path:
@@ -431,12 +409,11 @@ class RavenTestDriver:
             )
 
         if cls._environment_flag(_STRICT_LICENSE_ENVIRONMENT_VARIABLE):
-            # C#'s TestServerOptions sets this unconditionally, which makes a licence mandatory to
-            # run a test suite at all. Opt-in here until that is a product decision; the flag is
-            # left alone otherwise, so a caller who set it themselves keeps it.
+            # C# sets this unconditionally, which makes a licence mandatory to run any suite.
+            # Opt-in until that is a product decision; a caller who set it keeps it.
             options.licensing.throw_on_invalid_or_missing_license = True
 
-        # A local copy: the caller's list is theirs, and from here on there is more than one writer.
+        # A local copy: the caller's list is theirs, and there is more than one writer now.
         command_line_args = list(options.command_line_args)
 
         settings_file = cls._get_empty_settings_file()
@@ -448,8 +425,7 @@ class RavenTestDriver:
 
         options.command_line_args = command_line_args
 
-        # Untouched embedded default: the data directory sits inside the installed package, so a
-        # test run would write into its own dependency tree. Logs follow the data directory.
+        # The embedded default sits inside the installed package. Logs follow the data directory.
         default_data_directory = getattr(ServerOptions, "_DEFAULT_DATA_DIRECTORY", None)
         if default_data_directory is not None and options.data_directory == default_data_directory:
             data_directory = tempfile.mkdtemp(prefix="ravendb-test-driver-")
@@ -461,11 +437,8 @@ class RavenTestDriver:
 
     @classmethod
     def _resolve_external_server_url(cls) -> Optional[str]:
-        """Explicit configuration beats the environment.
-
-        RAVENDB_TEST_SERVER_URL used to win over configure_server(), which silently redirected a
-        suite pinned to the embedded server onto someone else's - where the driver then creates
-        and hard-deletes databases.
+        """Explicit configuration beats the environment, which could otherwise redirect a suite
+        onto a server where the driver creates and hard-deletes databases.
         """
         if cls._EXTERNAL_SERVER_URL:
             return cls._EXTERNAL_SERVER_URL
@@ -507,8 +480,7 @@ class RavenTestDriver:
             options = cls._GLOBAL_SERVER_OPTIONS or TestServerOptions()
             cls._normalize_test_server_options(options)
         except Exception as e:
-            # Only the option preparation above is wrapped; start_server below raises the
-            # embedded layer's own, richer error.
+            # Only option preparation is wrapped; start_server raises the embedded layer's error.
             raise RavenException(f"Unable to prepare the test server options: {e}", e) from e
 
         cls._TEST_SERVER.start_server(options)
@@ -517,8 +489,7 @@ class RavenTestDriver:
 
         store = DocumentStore(url, None)
 
-        # A secured embedded server hands its client material to EmbeddedServer.start_server;
-        # without copying it here the test client cannot authenticate to the server we just booted.
+        # Without this the test client cannot authenticate to the secured server it just booted.
         if cls._TEST_SERVER.client_pem_certificate_path:
             store.certificate_pem_path = cls._TEST_SERVER.client_pem_certificate_path
         if cls._TEST_SERVER.trust_store_path:
@@ -532,9 +503,8 @@ class RavenTestDriver:
     def stop_test_server(cls) -> None:
         """Close the shared test server and its server-level store.
 
-        Nothing else closes them: driver.close() only owns the per-test stores, so without this
-        the server lives until interpreter exit and its shutdown cost lands after the test runner
-        has printed its summary. Idempotent, and the server can be started again afterwards.
+        Nothing else closes them, so without this the cost lands at interpreter exit.
+        Idempotent, and the server can be started again afterwards.
         """
         lazy = cls._TEST_SERVER_STORE
         if lazy.is_value_created:
@@ -547,19 +517,13 @@ class RavenTestDriver:
 
     @classmethod
     def reset_server_configuration(cls) -> None:
-        """Forget configure_server / configure_external_server, without touching the server.
-
-        Kept separate from stop_test_server on purpose: someone freeing resources should not
-        silently lose the configuration they registered.
-        """
+        """Forget configure_server / configure_external_server, without touching the server."""
         cls._GLOBAL_SERVER_OPTIONS = None
         cls._EXTERNAL_SERVER_URL = None
         cls._EXTERNAL_SERVER_CERT = None
         cls._EXTERNAL_SERVER_TRUST_STORE = None
 
-    # Aliases for helpers that were never meant to be public (C# has no equivalent of any of
-    # them, the JVM driver keeps all three private). Kept for one release so an upgrade cannot
-    # break on an AttributeError.
+    # Never meant to be public (private in the JVM driver, absent in C#). Kept for one release.
 
     @staticmethod
     def _deprecated_alias(old: str, new: str) -> None:
