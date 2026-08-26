@@ -90,6 +90,38 @@ class TestOptionNormalization(TestCase):
             RavenTestDriver._normalize_test_server_options(options)
 
 
+class TestStrictLicenseOptIn(TestCase):
+    def setUp(self):
+        previous = os.environ.get("RAVENDB_TEST_STRICT_LICENSE")
+        if previous is None:
+            self.addCleanup(os.environ.pop, "RAVENDB_TEST_STRICT_LICENSE", None)
+        else:
+            self.addCleanup(os.environ.__setitem__, "RAVENDB_TEST_STRICT_LICENSE", previous)
+
+    def test_is_off_by_default(self):
+        os.environ.pop("RAVENDB_TEST_STRICT_LICENSE", None)
+
+        options = RavenTestDriver._normalize_test_server_options(TestServerOptions())
+
+        self.assertFalse(options.licensing.throw_on_invalid_or_missing_license)
+
+    def test_switched_on_by_the_environment(self):
+        os.environ["RAVENDB_TEST_STRICT_LICENSE"] = "1"
+
+        options = RavenTestDriver._normalize_test_server_options(TestServerOptions())
+
+        self.assertTrue(options.licensing.throw_on_invalid_or_missing_license)
+
+    def test_a_caller_who_set_it_keeps_it(self):
+        os.environ.pop("RAVENDB_TEST_STRICT_LICENSE", None)
+        options = TestServerOptions()
+        options.licensing.throw_on_invalid_or_missing_license = True
+
+        RavenTestDriver._normalize_test_server_options(options)
+
+        self.assertTrue(options.licensing.throw_on_invalid_or_missing_license)
+
+
 class TestServerSelectionPrecedence(TestCase):
     def setUp(self):
         self.addCleanup(setattr, RavenTestDriver, "_GLOBAL_SERVER_OPTIONS", RavenTestDriver._GLOBAL_SERVER_OPTIONS)

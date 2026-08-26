@@ -39,6 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_DRIVER_WAIT_FOR_USER"
 _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
+_STRICT_LICENSE_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_STRICT_LICENSE"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
 # co_name values that are never a useful database name.
@@ -424,6 +425,12 @@ class RavenTestDriver:
                 "A secured test server needs a client certificate the test client can "
                 "authenticate with. Pass client_pem_certificate_path to ServerOptions.secured()."
             )
+
+        if cls._environment_flag(_STRICT_LICENSE_ENVIRONMENT_VARIABLE):
+            # C#'s TestServerOptions sets this unconditionally, which makes a licence mandatory to
+            # run a test suite at all. Opt-in here until that is a product decision; the flag is
+            # left alone otherwise, so a caller who set it themselves keeps it.
+            options.licensing.throw_on_invalid_or_missing_license = True
 
         # A local copy: the caller's list is theirs, and from here on there is more than one writer.
         command_line_args = list(options.command_line_args)
