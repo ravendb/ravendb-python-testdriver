@@ -193,9 +193,9 @@ Runnable walkthrough: [Lab 01 — Docker, Testcontainers, and shared servers](la
 
 ## Test lifecycle
 
-Create a `RavenTestDriver` for the test or fixture. Closing the driver closes any store you left
-open and deletes its database, so nothing leaks if a test throws halfway. Context managers make
-both steps explicit:
+Create a `RavenTestDriver` for the test or fixture and register its cleanup once. Closing the driver
+closes any store you left open and deletes its database, so nothing leaks if a test throws halfway
+and you never have to close a store yourself:
 
 ```python
 from unittest import TestCase
@@ -203,12 +203,24 @@ from ravendb_test_driver import RavenTestDriver
 
 
 class TestPeople(TestCase):
+    def setUp(self):
+        self.driver = RavenTestDriver()
+        self.addCleanup(self.driver.close)     # the only cleanup line you need
+
     def test_stores_a_person(self):
-        with RavenTestDriver() as driver:
-            with driver.get_document_store() as store:
-                with store.open_session() as session:
-                    session.store({"name": "John"}, "people/1")
-                    session.save_changes()
+        store = self.driver.get_document_store()
+        with store.open_session() as session:
+            session.store({"name": "John"}, "people/1")
+            session.save_changes()
+```
+
+Closing stores yourself is still fine, and it is what you want when one test creates several
+databases and the order they go away in matters:
+
+```python
+with RavenTestDriver() as driver:
+    with driver.get_document_store() as store:
+        ...
 ```
 
 Each `get_document_store()` call creates a new database. Closing the store deletes it, which keeps

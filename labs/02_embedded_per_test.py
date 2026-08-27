@@ -24,12 +24,12 @@ def main() -> None:
             with second.open_session() as session:
                 assert session.load("people/1", dict) is None
 
-    # You do not have to close every store yourself: closing the driver closes the ones you left
-    # open and deletes their databases.
-    driver = RavenTestDriver()
-    forgotten = driver.get_document_store()
-    assert forgotten.database.startswith("test_"), forgotten.database
-    driver.close()
+    # You do not have to close the stores. Leaving the driver's `with` block closes whatever is
+    # still open and deletes those databases, so a test that throws halfway still cleans up.
+    with RavenTestDriver() as driver:
+        forgotten = driver.get_document_store()  # no forgotten.close() anywhere
+        assert forgotten.database.startswith("test_"), forgotten.database
+
     assert driver.disposed
 
     # The server is shared by every driver in the process, and nothing closes it before the
