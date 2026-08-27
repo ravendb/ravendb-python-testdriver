@@ -39,6 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_WAIT_FOR_USER"
 _DEFAULT_WAIT_FOR_USER_TIMEOUT = timedelta(minutes=5)
+_DEFAULT_WAIT_FOR_INDEXING_TIMEOUT = timedelta(seconds=60)
 _UNSET_TIMEOUT = object()
 _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
 _STRICT_LICENSE_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_STRICT_LICENSE"
@@ -225,13 +226,13 @@ class RavenTestDriver:
         return "_".join(parts)
 
     def pre_initialize(self, document_store: DocumentStore) -> None:
-        pass  # empty by design
+        """Override to configure the store before initialize() runs on it. Does nothing here."""
 
     def pre_configure_database(self, database_record: DatabaseRecord) -> None:
-        pass  # empty by design
+        """Override to change the record before the database is created. Does nothing here."""
 
     def setup_database(self, document_store: DocumentStore) -> None:
-        pass  # empty by design
+        """Override to create indexes or seed data on the initialized store. Does nothing here."""
 
     @staticmethod
     def wait_for_indexing(
@@ -239,7 +240,7 @@ class RavenTestDriver:
         database: Optional[str] = None,
         timeout: Optional[timedelta] = None,
     ) -> None:
-        timeout = timeout if timeout is not None else timedelta(seconds=60)  # Default timeout
+        timeout = timeout if timeout is not None else _DEFAULT_WAIT_FOR_INDEXING_TIMEOUT
         admin = store.maintenance.for_database(database)
         start_time = time.monotonic()
 
@@ -340,8 +341,7 @@ class RavenTestDriver:
                     session.save_changes()
                     break
 
-    @staticmethod
-    def open_browser(url: str) -> None:
+    def open_browser(self, url: str) -> None:
         print(url)
         try:
             opened = webbrowser.open(url)
