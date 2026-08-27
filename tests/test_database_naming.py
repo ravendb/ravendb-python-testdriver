@@ -7,31 +7,27 @@ from ravendb_test_driver import RavenTestDriver
 from tests.support import isolate_environment
 
 
-class _PlainNameDriver(RavenTestDriver):
-    use_caller_name_for_database = False
+class _CallerNameDriver(RavenTestDriver):
+    use_caller_name_for_database = True
 
 
-class TestCallerName(TestCase):
-    def test_is_on_by_default(self):
-        self.assertTrue(RavenTestDriver.use_caller_name_for_database)
+class TestCallerNameOptIn(TestCase):
+    def test_is_off_by_default(self):
+        self.assertFalse(RavenTestDriver.use_caller_name_for_database)
+        self.assertTrue(RavenTestDriver()._next_database_name(None).startswith("test_"))
 
-    def test_uses_the_calling_test_name(self):
-        name = RavenTestDriver()._next_database_name(None)
+    def test_uses_the_calling_test_name_when_switched_on(self):
+        name = _CallerNameDriver()._next_database_name(None)
 
-        self.assertTrue(name.startswith("test_uses_the_calling_test_name_"), name)
-
-    def test_can_be_switched_off(self):
-        name = _PlainNameDriver()._next_database_name(None)
-
-        self.assertTrue(name.startswith("test_"), name)
+        self.assertTrue(name.startswith("test_uses_the_calling_test_name_when_switched_on_"), name)
 
     def test_an_explicit_database_still_wins(self):
-        name = RavenTestDriver()._next_database_name("chosen")
+        name = _CallerNameDriver()._next_database_name("chosen")
 
         self.assertTrue(name.startswith("chosen_"), name)
 
     def test_synthetic_frame_names_fall_back_to_test(self):
-        driver = RavenTestDriver()
+        driver = _CallerNameDriver()
         name = (lambda: driver._next_database_name(None))()
 
         # co_name is <lambda> here, which is not a usable database name.
