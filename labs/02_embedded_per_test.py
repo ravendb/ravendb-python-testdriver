@@ -28,7 +28,7 @@ def main() -> None:
     # still open and deletes those databases, so a test that throws halfway still cleans up.
     with RavenTestDriver() as driver:
         forgotten = driver.get_document_store()  # no forgotten.close() anywhere
-        assert forgotten.database.startswith("test_"), forgotten.database
+        assert forgotten.database.startswith("main_"), forgotten.database  # named after the caller
 
     assert driver.disposed
 

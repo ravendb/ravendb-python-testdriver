@@ -43,7 +43,7 @@ _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
 
 class RavenTestDriver:
-    use_caller_name_for_database: bool = False
+    use_caller_name_for_database: bool = True
 
     _TEST_SERVER: EmbeddedServer = EmbeddedServer()
     _TEST_SERVER_STORE: Lazy[DocumentStore] = Lazy(lambda: RavenTestDriver._run_server())

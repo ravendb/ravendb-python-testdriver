@@ -67,11 +67,9 @@ class TestDatabaseLifecycle(TestCase):
 @skip_without_own_server
 class TestDatabaseNamingAgainstServer(TestCase):
     def setUp(self):
-        self.addCleanup(setattr, RavenTestDriver, "use_caller_name_for_database", False)
         isolate_environment(self)
 
     def test_caller_name_and_process_id_reach_the_created_database(self):
-        RavenTestDriver.use_caller_name_for_database = True
         os.environ["RAVENDB_TEST_UNIQUE_DB_NAMES"] = "1"
 
         with RavenTestDriver() as driver:
