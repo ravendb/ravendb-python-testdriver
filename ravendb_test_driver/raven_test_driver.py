@@ -44,7 +44,6 @@ _UNSET_TIMEOUT = object()
 _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
-_SYNTHETIC_FRAME_NAMES = frozenset({"<module>", "<lambda>", "<listcomp>", "<dictcomp>", "<setcomp>", "<genexpr>"})
 _DATABASE_NAME_STEM_MAX_LENGTH = 100
 
 
@@ -185,7 +184,9 @@ class RavenTestDriver:
 
     @staticmethod
     def _database_stem(frame_name: str) -> Optional[str]:
-        if frame_name in _SYNTHETIC_FRAME_NAMES:
+        # CPython wraps every synthetic code-object name in angle brackets (<module>, <lambda>,
+        # <genexpr>, and the comprehensions before 3.12 inlined them). No identifier can.
+        if frame_name.startswith("<"):
             return None
 
         return re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name)[:_DATABASE_NAME_STEM_MAX_LENGTH] or None
