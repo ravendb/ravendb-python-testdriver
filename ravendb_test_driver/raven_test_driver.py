@@ -38,9 +38,7 @@ from ravendb_test_driver.options import GetDocumentStoreOptions, TestServerOptio
 _LOGGER = logging.getLogger(__name__)
 
 _WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_WAIT_FOR_USER"
-_DEFAULT_WAIT_FOR_USER_TIMEOUT = timedelta(minutes=5)
 _DEFAULT_WAIT_FOR_INDEXING_TIMEOUT = timedelta(seconds=60)
-_UNSET_TIMEOUT = object()
 _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
@@ -277,46 +275,19 @@ class RavenTestDriver:
 
         raise TimeoutException(f"The indexes stayed stale for more than {timeout}. {all_index_errors_text}")
 
-    @staticmethod
-    def _is_debugger_attached() -> bool:
-        """Used only to make the wait unbounded, never to skip it.
-
-        sys.gettrace() is not consulted: coverage.py would make every run look debugged.
-        """
-        debugpy = sys.modules.get("debugpy")
-        if debugpy is not None:
-            try:
-                if debugpy.is_client_connected():
-                    return True
-            except Exception:  # pragma: no cover - debugpy internals
-                pass
-
-        pydevd = sys.modules.get("pydevd")
-        if pydevd is not None:
-            try:
-                return pydevd.get_global_debugger() is not None
-            except Exception:  # pragma: no cover - pydevd internals
-                pass
-
-        return False
-
     def wait_for_user_to_continue_the_test(
         self,
         store: DocumentStore,
-        timeout: Optional[timedelta] = _UNSET_TIMEOUT,
+        timeout: Optional[timedelta] = None,
     ) -> None:
         """Open Studio and block until a 'Debug/Done' document shows up in this database.
 
-        Bounded by `timeout`, five minutes by default, so a call left in committed code fails a
-        CI job fast instead of hanging it. Pass timeout=None to wait forever; with no timeout given
-        an attached debugger makes the wait unbounded. Set RAVENDB_TEST_WAIT_FOR_USER to
-        0/false/no/off to skip the wait entirely.
+        Waits as long as it takes, because a human is looking at Studio. Pass a `timeout` to
+        bound it, and set RAVENDB_TEST_WAIT_FOR_USER to 0/false/no/off to skip the wait
+        entirely, which is how a CI job protects itself from a call left in committed code.
         """
         if not self._environment_flag(_WAIT_FOR_USER_ENVIRONMENT_VARIABLE, default=True):
             return
-
-        if timeout is _UNSET_TIMEOUT:
-            timeout = None if self._is_debugger_attached() else _DEFAULT_WAIT_FOR_USER_TIMEOUT
 
         database_name_encoded = quote(store.database, safe="")
         documents_page = (

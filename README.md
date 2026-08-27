@@ -264,10 +264,9 @@ browser, and blocks until a document with the id `Debug/Done` shows up in the da
 from Studio to continue; the driver deletes the marker so a later wait on the same store still
 blocks.
 
-The wait is bounded by a five-minute timeout and then raises `TimeoutException`, so a call left in
-committed code fails a CI job instead of hanging it. Pass `timeout=None` to wait indefinitely,
-which is also what happens automatically when a debugger is attached, or set
-`RAVENDB_TEST_WAIT_FOR_USER=0` to skip the wait entirely.
+The wait is unbounded, because you are the one looking at Studio. Pass a `timeout` to bound it and
+get a `TimeoutException` instead. A CI job protects itself from a call left in committed code with
+`RAVENDB_TEST_WAIT_FOR_USER=0`, which skips the wait entirely.
 
 Runnable walkthrough: [Lab 03 — seeding and indexes](labs/03-seeding-indexes.md).
 
