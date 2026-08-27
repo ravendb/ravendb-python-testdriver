@@ -42,7 +42,6 @@ _DEFAULT_WAIT_FOR_USER_TIMEOUT = timedelta(minutes=5)
 _DEFAULT_WAIT_FOR_INDEXING_TIMEOUT = timedelta(seconds=60)
 _UNSET_TIMEOUT = object()
 _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
-_STRICT_LICENSE_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_STRICT_LICENSE"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
 
 _SYNTHETIC_FRAME_NAMES = frozenset({"<module>", "<lambda>", "<listcomp>", "<dictcomp>", "<setcomp>", "<genexpr>"})
@@ -408,11 +407,6 @@ class RavenTestDriver:
                 "A secured test server needs a client certificate the test client can "
                 "authenticate with. Pass client_pem_certificate_path to ServerOptions.secured()."
             )
-
-        if RavenTestDriver._environment_flag(_STRICT_LICENSE_ENVIRONMENT_VARIABLE):
-            # C# sets this unconditionally, which makes a licence mandatory to run any suite.
-            # Opt-in until that is a product decision; a caller who set it keeps it.
-            options.licensing.throw_on_invalid_or_missing_license = True
 
         # A local copy: the caller's list is theirs, and there is more than one writer now.
         command_line_args = list(options.command_line_args)

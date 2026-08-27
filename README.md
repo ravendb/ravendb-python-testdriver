@@ -268,23 +268,10 @@ Defaults are chosen so an existing suite keeps working. These are the knobs wort
 | `TestServerOptions.run_in_memory` | `True` | Runs embedded test servers in memory. Set `False` on the options you pass to `configure_server` to go back to disk |
 | `RavenTestDriver.use_caller_name_for_database` | `False` | Names databases after the calling test (`test_stores_a_person_3`) instead of `test_3` |
 | `RAVENDB_TEST_UNIQUE_DB_NAMES` | off | Adds the process id to database names, so parallel runners sharing one attached server stop colliding |
-| `TestServerOptions.licensing.throw_on_invalid_or_missing_license` | `False` | Test servers refuse to start without a valid licence, matching the .NET test driver |
-| `RAVENDB_TEST_STRICT_LICENSE` | off | The same switch from outside the code, for a CI job that wants a strict run |
 | `RAVENDB_TEST_WAIT_FOR_USER` | on | Set to `0` to skip `wait_for_user_to_continue_the_test` entirely |
 
 Anything describing the server itself belongs on the options object; the environment variables exist
-so a CI job can flip a switch without editing test code. Strict licensing has both, because it is a
-property of the server *and* something a pipeline wants to turn on for one run:
-
-```python
-options = TestServerOptions()
-options.licensing.throw_on_invalid_or_missing_license = True
-options.licensing.license_path = "license.json"
-RavenTestDriver.configure_server(options)
-```
-
-The environment variable only ever turns it on, so options you configured yourself are never
-overridden.
+so a CI job can flip a switch without editing test code.
 
 Caller-name databases are sanitized to `[A-Za-z0-9_.-]` and truncated, and fall back to `test` when
 the caller has no usable name, such as a lambda or a module-level call.
