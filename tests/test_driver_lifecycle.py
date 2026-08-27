@@ -72,21 +72,21 @@ class TestDriverCloseError(TestCase):
 
 class TestDatabaseNameAllocation(TestCase):
     def test_two_drivers_get_distinct_database_names(self):
-        # self._INDEX += 1 read the class attribute and wrote an instance one, so every
+        # self._DATABASE_COUNTER += 1 read the class attribute and wrote an instance one, so every
         # driver restarted numbering at 1 and two live drivers both asked for test_1.
         with RavenTestDriver() as first, RavenTestDriver() as second:
             with first.get_document_store() as first_store:
                 with second.get_document_store() as second_store:
                     self.assertNotEqual(first_store.database, second_store.database)
 
-    def test_index_stays_a_class_attribute(self):
+    def test_counter_stays_a_class_attribute(self):
         driver = RavenTestDriver()
-        before = RavenTestDriver._INDEX
+        before = RavenTestDriver._DATABASE_COUNTER
         with driver.get_document_store():
             pass
 
-        self.assertEqual(before + 1, RavenTestDriver._INDEX)
-        self.assertNotIn("_INDEX", driver.__dict__)
+        self.assertEqual(before + 1, RavenTestDriver._DATABASE_COUNTER)
+        self.assertNotIn("_DATABASE_COUNTER", driver.__dict__)
         driver.close()
 
 

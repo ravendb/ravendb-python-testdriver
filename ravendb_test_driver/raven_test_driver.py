@@ -47,8 +47,6 @@ class RavenTestDriver:
 
     _TEST_SERVER: EmbeddedServer = EmbeddedServer()
     _TEST_SERVER_STORE: Lazy[DocumentStore] = Lazy(lambda: RavenTestDriver._run_server())
-    _INDEX = 0
-    _INDEX_LOCK = threading.Lock()
     _GLOBAL_SERVER_OPTIONS: Optional[ServerOptions] = None
     _EMPTY_SETTINGS_FILE_NAME: Optional[str] = None
     _EXTERNAL_SERVER_URL: Optional[str] = None
@@ -65,13 +63,6 @@ class RavenTestDriver:
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
-
-    @staticmethod
-    def _next_index() -> int:
-        # Qualified, not cls: 'cls._INDEX += 1' would shadow the counter per subclass.
-        with RavenTestDriver._INDEX_LOCK:
-            RavenTestDriver._INDEX += 1
-            return RavenTestDriver._INDEX
 
     @staticmethod
     def _remove_empty_settings_file(path: str) -> None:
@@ -207,6 +198,16 @@ class RavenTestDriver:
             return default
         return value not in _FALSY_ENVIRONMENT_VALUES
 
+    _DATABASE_COUNTER = 0
+    _DATABASE_COUNTER_LOCK = threading.Lock()
+
+    @staticmethod
+    def _next_database_number() -> int:
+        # Qualified, not cls: 'cls._DATABASE_COUNTER += 1' would shadow it per subclass.
+        with RavenTestDriver._DATABASE_COUNTER_LOCK:
+            RavenTestDriver._DATABASE_COUNTER += 1
+            return RavenTestDriver._DATABASE_COUNTER
+
     @classmethod
     def _next_database_name(cls, database: Optional[str] = None) -> str:
         stem = database
@@ -217,7 +218,7 @@ class RavenTestDriver:
         if cls._environment_flag(_UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE):
             # The counter restarts per process, so runners sharing a server would collide.
             parts.append(str(os.getpid()))
-        parts.append(str(cls._next_index()))
+        parts.append(str(cls._next_database_number()))
 
         return "_".join(parts)
 
