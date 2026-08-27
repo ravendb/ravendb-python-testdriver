@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 setup(
     name="ravendb-test-driver",
     packages=find_packages(exclude=["*.tests.*", "tests", "*.tests", "tests.*"]),
-    version="7.2.5.post2",
+    version="7.2.5.post3",
     description="RavenDB package for writing integration tests against RavenDB server",
     long_description_content_type="text/markdown",
     long_description=open("README.md").read(),

@@ -21,16 +21,42 @@ from ravendb_test_driver import RavenTestDriver
 class TestThings(TestCase):
     def setUp(self):
         self.driver = RavenTestDriver()
+        self.addCleanup(self.driver.close)    # the only cleanup line you need
 
     def test_it(self):
-        with self.driver.get_document_store() as store:   # fresh isolated database
-            with store.open_session() as session:
-                session.store({"name": "John"}, "people/1")
-                session.save_changes()
+        store = self.driver.get_document_store()   # fresh isolated database, never closed by hand
+        with store.open_session() as session:
+            session.store({"name": "John"}, "people/1")
+            session.save_changes()
 ```
 
 Two `get_document_store()` calls give two different databases, so data written to one is invisible
 to the other. That isolation is what keeps tests independent.
+
+You do not have to close the stores. Closing the driver closes whatever is still open and deletes
+those databases, so registering the driver's cleanup once covers every test in the class, including
+the ones that throw halfway through.
+
+Outside a test class, a `with` block does the same thing:
+
+```python
+with RavenTestDriver() as driver:
+    store = driver.get_document_store()
+    ...                     # no store.close() anywhere
+# leaving the block closed the store and deleted its database
+```
+
+Closing stores yourself is still fine, and it is what you want when a single test creates several
+databases and you care about the order they go away in.
+
+The embedded server is shared by every driver in the process and runs in memory. Nothing closes it
+before the interpreter exits, so call `RavenTestDriver.stop_test_server()` from your runner's
+teardown when you want that cost inside the run:
+
+```python
+def pytest_sessionfinish(session, exitstatus):
+    RavenTestDriver.stop_test_server()
+```
 
 ## Takeaway
 

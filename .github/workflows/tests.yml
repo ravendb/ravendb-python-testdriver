@@ -50,6 +50,9 @@ jobs:
       - name: Run Lab 03 (seeding + indexes)
         run: python labs/03_seeding_indexes.py
 
+      - name: Run Lab 05 (secured embedded)
+        run: python labs/05_secured_embedded.py
+
   attach:
     # Path C: attach to a RavenDB server running in Docker, with NO .NET installed. Proves the
     # driver needs no runtime when it does not boot the embedded server.
