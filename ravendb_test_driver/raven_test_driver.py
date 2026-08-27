@@ -203,7 +203,6 @@ class RavenTestDriver:
 
     @staticmethod
     def _next_database_number() -> int:
-        # Qualified, not cls: 'cls._DATABASE_COUNTER += 1' would shadow it per subclass.
         with RavenTestDriver._DATABASE_COUNTER_LOCK:
             RavenTestDriver._DATABASE_COUNTER += 1
             return RavenTestDriver._DATABASE_COUNTER
@@ -279,9 +278,7 @@ class RavenTestDriver:
     ) -> None:
         """Open Studio and block until a 'Debug/Done' document shows up in this database.
 
-        Waits as long as it takes, because a human is looking at Studio. Pass a `timeout` to
-        bound it, and set RAVENDB_TEST_WAIT_FOR_USER to 0/false/no/off to skip the wait
-        entirely, which is how a CI job protects itself from a call left in committed code.
+        Unbounded unless `timeout` is given. RAVENDB_TEST_WAIT_FOR_USER=0/false/no/off skips it.
         """
         if not self._environment_flag(_WAIT_FOR_USER_ENVIRONMENT_VARIABLE, default=True):
             return
