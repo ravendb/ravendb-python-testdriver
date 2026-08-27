@@ -32,7 +32,7 @@ def isolate_environment(test) -> None:
 def reset_driver() -> None:
     """Put the shared server and its configuration back to a pristine state."""
     RavenTestDriver.stop_test_server()
-    RavenTestDriver.reset_server_configuration()
+    RavenTestDriver._reset_server_configuration()
     for name in ENVIRONMENT_NAMES:
         os.environ.pop(name, None)
 

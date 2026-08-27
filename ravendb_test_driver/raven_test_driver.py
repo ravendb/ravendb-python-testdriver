@@ -353,20 +353,18 @@ class RavenTestDriver:
             print("No browser could be opened here; use the URL above.")
 
     def close(self) -> None:
-        if getattr(self, "disposed", False):
+        if self.disposed:
             return
 
+        self.disposed = True
         exceptions = []
 
-        try:
-            # Snapshot: each store's after-close callback pops itself out of this dict.
-            for document_store in list(self._document_stores):
-                try:
-                    document_store.close()
-                except Exception as e:
-                    exceptions.append(e)
-        finally:
-            self.disposed = True
+        # Snapshot: each store's after-close callback pops itself out of this dict.
+        for document_store in list(self._document_stores):
+            try:
+                document_store.close()
+            except Exception as e:
+                exceptions.append(e)
 
         if self.on_driver_closed:
             # Collected, so a raising callback cannot discard the store-close errors.
@@ -521,7 +519,7 @@ class RavenTestDriver:
         RavenTestDriver._TEST_SERVER.close()
 
     @classmethod
-    def reset_server_configuration(cls) -> None:
+    def _reset_server_configuration(cls) -> None:
         """Forget configure_server / configure_external_server, without touching the server."""
         RavenTestDriver._GLOBAL_SERVER_OPTIONS = None
         RavenTestDriver._EXTERNAL_SERVER_URL = None
