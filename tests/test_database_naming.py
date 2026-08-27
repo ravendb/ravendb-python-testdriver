@@ -36,9 +36,6 @@ class TestCallerNameOptIn(TestCase):
     def test_illegal_characters_are_replaced(self):
         self.assertEqual("weird_name_with_chars", RavenTestDriver._database_stem("weird name/with:chars"))
 
-    def test_a_long_name_is_truncated(self):
-        self.assertEqual(100, len(RavenTestDriver._database_stem("x" * 300)))
-
     def test_synthetic_names_have_no_stem(self):
         self.assertIsNone(RavenTestDriver._database_stem("<lambda>"))
 

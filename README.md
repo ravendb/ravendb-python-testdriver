@@ -284,8 +284,8 @@ Defaults are chosen so an existing suite keeps working. These are the knobs wort
 Anything describing the server itself belongs on the options object; the environment variables exist
 so a CI job can flip a switch without editing test code.
 
-Caller-name databases are sanitized to `[A-Za-z0-9_.-]` and truncated, and fall back to `test` when
-the caller has no usable name, such as a lambda or a module-level call.
+Caller-name databases are sanitized to `[A-Za-z0-9_.-]`, and fall back to `test` when the caller has
+no usable name, such as a lambda or a module-level call.
 
 ## Inspecting HTTP traffic
 

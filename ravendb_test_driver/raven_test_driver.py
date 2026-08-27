@@ -38,11 +38,8 @@ from ravendb_test_driver.options import GetDocumentStoreOptions, TestServerOptio
 _LOGGER = logging.getLogger(__name__)
 
 _WAIT_FOR_USER_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_WAIT_FOR_USER"
-_DEFAULT_WAIT_FOR_INDEXING_TIMEOUT = timedelta(seconds=60)
 _UNIQUE_DATABASE_NAMES_ENVIRONMENT_VARIABLE = "RAVENDB_TEST_UNIQUE_DB_NAMES"
 _FALSY_ENVIRONMENT_VALUES = frozenset({"0", "false", "no", "off"})
-
-_DATABASE_NAME_STEM_MAX_LENGTH = 100
 
 
 class RavenTestDriver:
@@ -187,7 +184,7 @@ class RavenTestDriver:
         if frame_name.startswith("<"):
             return None
 
-        return re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name)[:_DATABASE_NAME_STEM_MAX_LENGTH] or None
+        return re.sub(r"[^A-Za-z0-9_.-]", "_", frame_name) or None
 
     @staticmethod
     def _caller_name() -> Optional[str]:
@@ -237,9 +234,8 @@ class RavenTestDriver:
     def wait_for_indexing(
         store: DocumentStore,
         database: Optional[str] = None,
-        timeout: Optional[timedelta] = None,
+        timeout: timedelta = timedelta(seconds=60),
     ) -> None:
-        timeout = timeout if timeout is not None else _DEFAULT_WAIT_FOR_INDEXING_TIMEOUT
         admin = store.maintenance.for_database(database)
         start_time = time.monotonic()
 
