@@ -142,11 +142,12 @@ class RavenTestDriver:
         create_database_operation = CreateDatabaseOperation(database_record)
         document_store.maintenance.server.send(create_database_operation)
 
-        store = DocumentStore(document_store.urls, name)
-        if document_store.certificate_pem_path:
-            store.certificate_pem_path = document_store.certificate_pem_path
-        if document_store.trust_store_path:
-            store.trust_store_path = document_store.trust_store_path
+        store = self._store_with_credentials(
+            document_store.urls,
+            name,
+            document_store.certificate_pem_path,
+            document_store.trust_store_path,
+        )
 
         self.pre_initialize(store)
         store.initialize()
@@ -395,8 +396,8 @@ class RavenTestDriver:
     def _default_server_options() -> ServerOptions:
         return RavenTestDriver._normalize_test_server_options(TestServerOptions())
 
-    @classmethod
-    def _normalize_test_server_options(cls, options: ServerOptions) -> ServerOptions:
+    @staticmethod
+    def _normalize_test_server_options(options: ServerOptions) -> ServerOptions:
         """Give any ServerOptions the defaults a test server needs.
 
         Idempotent, and it never overrides a value the caller set explicitly.
@@ -408,7 +409,7 @@ class RavenTestDriver:
                 "authenticate with. Pass client_pem_certificate_path to ServerOptions.secured()."
             )
 
-        if cls._environment_flag(_STRICT_LICENSE_ENVIRONMENT_VARIABLE):
+        if RavenTestDriver._environment_flag(_STRICT_LICENSE_ENVIRONMENT_VARIABLE):
             # C# sets this unconditionally, which makes a licence mandatory to run any suite.
             # Opt-in until that is a product decision; a caller who set it keeps it.
             options.licensing.throw_on_invalid_or_missing_license = True
@@ -416,7 +417,7 @@ class RavenTestDriver:
         # A local copy: the caller's list is theirs, and there is more than one writer now.
         command_line_args = list(options.command_line_args)
 
-        settings_file = cls._get_empty_settings_file()
+        settings_file = RavenTestDriver._get_empty_settings_file()
         if settings_file not in command_line_args:
             command_line_args[:0] = ["-c", settings_file]
 
@@ -431,21 +432,21 @@ class RavenTestDriver:
         if options.data_directory == ServerOptions._DEFAULT_DATA_DIRECTORY:
             data_directory = tempfile.mkdtemp(prefix="ravendb-test-driver-")
             options.data_directory = data_directory
-            atexit.register(cls._cleanup_temp_dirs, data_directory)
+            atexit.register(RavenTestDriver._cleanup_temp_dirs, data_directory)
             _LOGGER.info("Test server data and logs redirected to %s", data_directory)
 
         return options
 
-    @classmethod
-    def _resolve_external_server_url(cls) -> Optional[str]:
+    @staticmethod
+    def _resolve_external_server_url() -> Optional[str]:
         """Explicit configuration beats the environment, which could otherwise redirect a suite
         onto a server where the driver creates and hard-deletes databases.
         """
-        if cls._EXTERNAL_SERVER_URL:
-            return cls._EXTERNAL_SERVER_URL
+        if RavenTestDriver._EXTERNAL_SERVER_URL:
+            return RavenTestDriver._EXTERNAL_SERVER_URL
 
         environment_url = os.environ.get("RAVENDB_TEST_SERVER_URL")
-        if environment_url and cls._GLOBAL_SERVER_OPTIONS is not None:
+        if environment_url and RavenTestDriver._GLOBAL_SERVER_OPTIONS is not None:
             warnings.warn(
                 f"Ignoring RAVENDB_TEST_SERVER_URL={environment_url!r} because configure_server() "
                 "was called explicitly. Drop that call to attach to the server from the "
@@ -457,50 +458,66 @@ class RavenTestDriver:
 
         return environment_url
 
-    @classmethod
-    def _run_server(cls) -> DocumentStore:
-        external_url = cls._resolve_external_server_url()
-        if external_url:
-            # Attach to an existing server; do not boot the embedded one (no .NET needed).
-            certificate = cls._EXTERNAL_SERVER_CERT or os.environ.get("RAVENDB_TEST_SERVER_CERT")
-            trust_store = cls._EXTERNAL_SERVER_TRUST_STORE or os.environ.get("RAVENDB_TEST_SERVER_CA")
-            if external_url.lower().startswith("https") and not certificate:
-                raise RavenException(
-                    f"Attaching to a secured server ({external_url}) needs a client certificate; pass "
-                    "configure_external_server(url, certificate_pem_path=...) or set RAVENDB_TEST_SERVER_CERT."
-                )
-            store = DocumentStore(external_url, None)
-            if certificate:
-                store.certificate_pem_path = certificate
-            if trust_store:
-                store.trust_store_path = trust_store
-            store.initialize()
-            return store
+    @staticmethod
+    def _store_with_credentials(
+        urls,
+        database: Optional[str],
+        certificate_pem_path: Optional[str],
+        trust_store_path: Optional[str],
+    ) -> DocumentStore:
+        """Every store the driver hands out carries the credentials of the server it talks to."""
+        store = DocumentStore(urls, database)
+        if certificate_pem_path:
+            store.certificate_pem_path = certificate_pem_path
+        if trust_store_path:
+            store.trust_store_path = trust_store_path
+        return store
 
+    @staticmethod
+    def _attach_to_external_server(url: str) -> DocumentStore:
+        """Build a store against a server somebody else runs. Nothing is booted, so no .NET is needed."""
+        certificate = RavenTestDriver._EXTERNAL_SERVER_CERT or os.environ.get("RAVENDB_TEST_SERVER_CERT")
+        trust_store = RavenTestDriver._EXTERNAL_SERVER_TRUST_STORE or os.environ.get("RAVENDB_TEST_SERVER_CA")
+
+        if url.lower().startswith("https") and not certificate:
+            raise RavenException(
+                f"Attaching to a secured server ({url}) needs a client certificate; pass "
+                "configure_external_server(url, certificate_pem_path=...) or set RAVENDB_TEST_SERVER_CERT."
+            )
+
+        store = RavenTestDriver._store_with_credentials(url, None, certificate, trust_store)
+        store.initialize()
+        return store
+
+    @staticmethod
+    def _boot_embedded_server() -> DocumentStore:
         try:
-            options = cls._GLOBAL_SERVER_OPTIONS or TestServerOptions()
-            cls._normalize_test_server_options(options)
+            options = RavenTestDriver._GLOBAL_SERVER_OPTIONS or TestServerOptions()
+            RavenTestDriver._normalize_test_server_options(options)
         except RavenException:
             raise  # already explains itself; a second wrapper would only hide it
         except Exception as e:
             # Only option preparation is wrapped; start_server raises the embedded layer's error.
             raise RavenException(f"Unable to prepare the test server options: {e}", e) from e
 
-        cls._TEST_SERVER.start_server(options)
+        RavenTestDriver._TEST_SERVER.start_server(options)
 
-        url = cls._TEST_SERVER.get_server_uri()
-
-        store = DocumentStore(url, None)
-
-        # Without this the test client cannot authenticate to the secured server it just booted.
-        if cls._TEST_SERVER.client_pem_certificate_path:
-            store.certificate_pem_path = cls._TEST_SERVER.client_pem_certificate_path
-        if cls._TEST_SERVER.trust_store_path:
-            store.trust_store_path = cls._TEST_SERVER.trust_store_path
-
+        store = RavenTestDriver._store_with_credentials(
+            RavenTestDriver._TEST_SERVER.get_server_uri(),
+            None,
+            RavenTestDriver._TEST_SERVER.client_pem_certificate_path,
+            RavenTestDriver._TEST_SERVER.trust_store_path,
+        )
         store.initialize()
-
         return store
+
+    @staticmethod
+    def _run_server() -> DocumentStore:
+        external_url = RavenTestDriver._resolve_external_server_url()
+        if external_url:
+            return RavenTestDriver._attach_to_external_server(external_url)
+
+        return RavenTestDriver._boot_embedded_server()
 
     @classmethod
     def stop_test_server(cls) -> None:
@@ -537,10 +554,10 @@ class RavenTestDriver:
             stacklevel=3,
         )
 
-    @classmethod
-    def run_server(cls) -> DocumentStore:
-        cls._deprecated_alias("run_server", "_run_server")
-        return cls._run_server()
+    @staticmethod
+    def run_server() -> DocumentStore:
+        RavenTestDriver._deprecated_alias("run_server", "_run_server")
+        return RavenTestDriver._run_server()
 
     @staticmethod
     def default_server_options() -> ServerOptions:
