@@ -10,10 +10,11 @@ import time
 import warnings
 import webbrowser
 from datetime import timedelta
-from typing import Optional, Dict, Any, Callable
+from typing import IO, Optional, Dict, Any, Callable
 from urllib.parse import quote
 
 from ravendb import (
+    DatabaseSmugglerImportOptions,
     DocumentStore,
     Lazy,
     CreateDatabaseOperation,
@@ -57,6 +58,7 @@ class RavenTestDriver:
         self.disposed = False
         self._document_stores: Dict[DocumentStore, bool] = {}
         self.on_driver_closed: Optional[Callable[[RavenTestDriver], None]] = None
+        self._dump_stream: Optional[IO[bytes]] = None
 
     def __enter__(self) -> "RavenTestDriver":
         return self
@@ -147,6 +149,7 @@ class RavenTestDriver:
 
         store.add_after_close(__close_event_callback)
 
+        self._import_database_dump(store, database_record.database_name)
         self.setup_database(store)
 
         if options.wait_for_indexing_timeout is not None:
@@ -155,6 +158,32 @@ class RavenTestDriver:
         self._document_stores[store] = True
 
         return store
+
+    def database_dump_file_path(self) -> Optional[str]:
+        """Override to seed every database the driver creates from a .ravendbdump file."""
+        return None
+
+    def database_dump_file_stream(self) -> Optional[IO[bytes]]:
+        """Override to seed from an open binary stream. The driver closes it on close()."""
+        return None
+
+    def _import_database_dump(self, store: DocumentStore, database_name: str) -> None:
+        source = self.database_dump_file_path() or self._owned_dump_stream()
+        if source is None:
+            return
+
+        operation = store.smuggler.for_database(database_name).import_data(DatabaseSmugglerImportOptions(), source)
+        operation.wait_for_completion()
+
+    def _owned_dump_stream(self) -> Optional[IO[bytes]]:
+        if self._dump_stream is None:
+            # Asked once: re-reading the hook per database would leak a stream per store.
+            self._dump_stream = self.database_dump_file_stream()
+
+        if self._dump_stream is not None and self._dump_stream.seekable():
+            self._dump_stream.seek(0)
+
+        return self._dump_stream
 
     @staticmethod
     def _delete_test_database(store: DocumentStore, database_name: str) -> None:
@@ -329,6 +358,12 @@ class RavenTestDriver:
         for document_store in list(self._document_stores):
             try:
                 document_store.close()
+            except Exception as e:
+                exceptions.append(e)
+
+        if self._dump_stream is not None:
+            try:
+                self._dump_stream.close()
             except Exception as e:
                 exceptions.append(e)
 
