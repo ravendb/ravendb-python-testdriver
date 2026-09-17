@@ -22,7 +22,7 @@ from ravendb import (
     GetIndexErrorsOperation,
 )
 from ravendb.documents.indexes.definitions import IndexState
-from ravendb.exceptions.cluster import NoLoaderException
+from ravendb.exceptions.cluster import NoLeaderException
 from ravendb.exceptions.exceptions import (
     DatabaseDoesNotExistException,
     TimeoutException,
@@ -190,12 +190,8 @@ class RavenTestDriver:
         """Hard-delete a test database, ignoring the failures that are not the test's problem."""
         try:
             store.maintenance.server.send(DeleteDatabaseOperation(database_name, True))
-        except (DatabaseDoesNotExistException, NoLoaderException):
+        except (DatabaseDoesNotExistException, NoLeaderException):
             pass  # already gone, or the cluster has no leader right now
-        except RavenException as e:
-            # The client maps NoLeaderException under a misspelled key, so it arrives untyped.
-            if "NoLeaderException" not in str(e):
-                raise
 
     @staticmethod
     def _database_stem(frame_name: str) -> Optional[str]:

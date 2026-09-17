@@ -11,7 +11,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from ravendb import Lazy
-from ravendb.exceptions.cluster import NoLoaderException
+from ravendb.exceptions.cluster import NoLeaderException
 from ravendb.exceptions.exceptions import DatabaseDoesNotExistException
 from ravendb.exceptions.raven_exceptions import RavenException
 from ravendb_embedded import ServerOptions
@@ -42,15 +42,8 @@ class TestDeleteTestDatabase(TestCase):
     def test_a_database_that_is_already_gone_is_not_an_error(self):
         RavenTestDriver._delete_test_database(_StoreThatRaises(DatabaseDoesNotExistException("gone")), "test_1")
 
-    def test_a_typed_no_leader_failure_is_ignored(self):
-        RavenTestDriver._delete_test_database(_StoreThatRaises(NoLoaderException("no leader")), "test_1")
-
-    def test_an_untyped_no_leader_failure_is_ignored(self):
-        # The client maps the server's NoLeaderException under a misspelled key, so today a real
-        # no-leader failure arrives as a plain RavenException carrying the name in its message.
-        error = RavenException("Raven.Client.Exceptions.Cluster.NoLeaderException: no leader elected")
-
-        RavenTestDriver._delete_test_database(_StoreThatRaises(error), "test_1")
+    def test_a_no_leader_failure_is_ignored(self):
+        RavenTestDriver._delete_test_database(_StoreThatRaises(NoLeaderException("no leader")), "test_1")
 
     def test_any_other_failure_still_propagates(self):
         with self.assertRaises(RavenException):
