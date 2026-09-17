@@ -253,6 +253,30 @@ class PeopleTestDriver(RavenTestDriver):
         database_record.settings["Indexing.MapTimeoutInSec"] = "30"
 ```
 
+Override `database_dump_file_path(self)` to seed every database from a `.ravendbdump` instead of
+writing the documents by hand. The import runs before `setup_database`:
+
+```python
+class PeopleTestDriver(RavenTestDriver):
+    def database_dump_file_path(self):
+        return "fixtures/people.ravendbdump"
+```
+
+`database_dump_file_stream(self)` takes an open binary stream instead of a path. The driver asks
+for it once, rewinds it between databases, and closes it when the driver closes:
+
+```python
+class PeopleTestDriver(RavenTestDriver):
+    def database_dump_file_stream(self):
+        return importlib.resources.files("tests.fixtures").joinpath("people.ravendbdump").open("rb")
+```
+
+Produce a dump from a database you already have with the client's smuggler:
+
+```python
+store.smuggler.for_database(store.database).export(DatabaseSmugglerExportOptions(), "people.ravendbdump")
+```
+
 Use `GetDocumentStoreOptions.wait_for_indexing_timeout` when a store should not be returned until
 indexing settles, or call `wait_for_indexing(store)` directly. It waits until every applicable
 index is non-stale and any side-by-side replacement has been swapped in.
